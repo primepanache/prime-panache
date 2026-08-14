@@ -62,6 +62,10 @@ footer{background:var(--ink);color:#eee8dc;padding:45px max(22px,calc((100% - 12
 @media(max-width:950px){.gallery-wrap{grid-template-columns:1fr}.thumbs{order:2;flex-direction:row;overflow:auto}.main-gallery{height:450px}.thumb{min-width:68px;width:68px;height:68px}}
 @media(max-width:650px){.gallery-wrap{display:flex;flex-direction:column}.main-gallery{height:330px;width:100%}.thumbs{width:100%;order:2}.thumb{width:60px;height:60px;min-width:60px}.checkout-form{grid-template-columns:1fr}.checkout-full{grid-column:auto}.support-panel{margin:0 22px 40px;display:block}.support-links{margin-top:15px}}
 
+
+.promo-row{display:flex;gap:8px;margin:14px 0}.promo-row input{flex:1;padding:10px;border:1px solid var(--line);border-radius:9px}.promo-row button{border:0;border-radius:9px;background:var(--ink);color:#fff;padding:0 16px;font-weight:700}.promo-msg{font-size:12px;margin-top:5px}.promo-ok{color:#3d6b45}.promo-bad{color:#a54c36}
+.order-admin-card{border:1px solid var(--line);border-radius:15px;padding:15px;margin:10px 0;background:#fff}.order-admin-head{display:flex;justify-content:space-between;gap:10px}.status-pill{padding:5px 9px;border-radius:999px;background:#eee8dc;font-size:10px;font-weight:700}.order-admin-card p{font-size:12px;color:var(--muted);line-height:1.55}.order-admin-card select{padding:8px;border:1px solid var(--line);border-radius:8px}
+
 </style>
 </head>
 <body>
@@ -161,25 +165,84 @@ function submitReview(id){
  if(!name||!text){toast('Please enter your name and review');return}
  reviews[id]=[...(reviews[id]||[]),{name,rating,text,date:new Date().toLocaleDateString('en-IN')}];saveReviews();toast('Thank you for your review');openProduct(id)
 }
+
+const defaultPromos=[
+ {code:'WELCOME10',type:'percent',value:10,minOrder:499,maxDiscount:200,expiry:'2026-12-31',active:true},
+ {code:'PP50',type:'fixed',value:50,minOrder:799,maxDiscount:0,expiry:'2026-12-31',active:true}
+];
+let promoCodes=JSON.parse(localStorage.getItem('pp_promos')||'null')||defaultPromos;
+let orders=JSON.parse(localStorage.getItem('pp_orders')||'[]');
+let deliveryFee=Number(localStorage.getItem('pp_delivery_fee')||40);
+let checkoutPromo=null;
+
+function saveCommerce(){localStorage.setItem('pp_promos',JSON.stringify(promoCodes));localStorage.setItem('pp_orders',JSON.stringify(orders));localStorage.setItem('pp_delivery_fee',String(deliveryFee))}
+function getCartSubtotal(){return Object.keys(cart).reduce((s,id)=>s+products.find(p=>p.id===id).price*cart[id],0)}
+function calculatePromo(code,subtotal){
+ code=(code||'').trim().toUpperCase();
+ const p=promoCodes.find(x=>x.code.toUpperCase()===code&&x.active&&(!x.expiry||new Date(x.expiry+'T23:59:59')>=new Date()));
+ if(!p)return {valid:false,message:'Invalid or expired promo code.'};
+ if(subtotal<Number(p.minOrder||0))return {valid:false,message:`Minimum order for this code is ${money(p.minOrder)}.`};
+ let discount=p.type==='percent'?Math.min(subtotal*(Number(p.value)/100),Number(p.maxDiscount||Infinity)):Math.min(subtotal,Number(p.value));
+ return {valid:true,promo:p,discount:Math.round(discount),message:`✓ ${p.code} applied — you save ${money(Math.round(discount))}.`};
+}
+function applyPromo(){
+ const r=calculatePromo(document.getElementById('promoInput').value,getCartSubtotal());
+ const box=document.getElementById('promoMsg');
+ if(r.valid){checkoutPromo=r;box.className='promo-msg promo-ok';box.textContent=r.message;renderCheckoutTotals()}
+ else {checkoutPromo=null;box.className='promo-msg promo-bad';box.textContent=r.message;renderCheckoutTotals()}
+}
+function renderCheckoutTotals(){
+ const sub=getCartSubtotal(),disc=checkoutPromo?.discount||0,total=Math.max(0,sub+deliveryFee-disc);
+ const el=document.getElementById('checkoutTotals');if(!el)return;
+ el.innerHTML=`<div class="order-line"><span>Subtotal</span><span>${money(sub)}</span></div><div class="order-line"><span>Delivery</span><span>${money(deliveryFee)}</span></div>${disc?`<div class="order-line" style="color:#3d6b45"><span>Promo (${esc(checkoutPromo.promo.code)})</span><span>−${money(disc)}</span></div>`:''}<div class="order-line"><b>Total</b><b>${money(total)}</b></div>`;
+}
+function sendOwnerEmail(order){
+ fetch('/api/send-order-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+   customerEmail:order.customerEmail||order.ownerEmail||'',
+   customerName:order.name,orderId:order.id,
+   items:order.items.map(i=>({name:i.name,quantity:i.quantity,amount:i.amount})),
+   subtotal:order.subtotal,deliveryFee:order.deliveryFee,discount:order.discount,total:order.total,
+   address:{name:order.name,address:order.address,city:order.city,state:order.state,pin:order.pin,phone:order.phone}
+ })}).then(r=>r.json()).then(x=>{
+   order.emailStatus=x.ownerEmailSent?'sent':'failed';localStorage.setItem('pp_orders',JSON.stringify(orders));
+ }).catch(()=>{order.emailStatus='failed';localStorage.setItem('pp_orders',JSON.stringify(orders))});
+}
+function showOrderConfirmation(order){
+ const d=document.createElement('div');d.id='modal';d.className='overlay';
+ d.innerHTML=`<div class="modal" style="text-align:center"><div style="font-size:45px">✓</div><div class="eyebrow dark">ORDER REQUEST RECEIVED</div><h2 style="font:600 34px 'Playfair Display',serif">Thank you, ${esc(order.name)}.</h2><p style="color:var(--muted)">Your order request has been recorded.</p><div class="order-summary" style="text-align:left"><div class="order-line"><span>Order ID</span><b>${esc(order.id)}</b></div><div class="order-line"><span>Total</span><b>${money(order.total)}</b></div><div class="order-line"><span>Estimated delivery</span><b>As shown by PIN checker</b></div></div><p style="font-size:12px;color:var(--muted)">We'll contact you using the details provided. Payment gateway will be connected to this flow next.</p><button class="btn gold" onclick="this.closest('.overlay').remove();goHome()">Continue shopping</button></div>`;
+ document.body.appendChild(d)
+}
+
 function checkoutForm(){
  const ids=Object.keys(cart);
  if(!ids.length){toast('Your bag is empty');return}
- let total=ids.reduce((s,id)=>s+products.find(p=>p.id===id).price*cart[id],0);
+ checkoutPromo=null;
  const d=document.createElement('div');d.id='modal';d.className='overlay';
- d.innerHTML=`<div class="modal"><button class="close" onclick="this.closest('.overlay').remove()">×</button><div class="eyebrow dark">CHECKOUT</div><h2 style="font:600 34px 'Playfair Display',serif">Where should we deliver?</h2><p style="color:var(--muted)">Enter your shipping details. Your information is used to prepare the order.</p>
- <div class="checkout-form"><label>Full name<input id="buyerName" autocomplete="name" placeholder="Your full name"></label><label>Mobile number<input id="buyerPhone" inputmode="tel" autocomplete="tel" placeholder="10-digit mobile number"></label>
+ d.innerHTML=`<div class="modal"><button class="close" onclick="this.closest('.overlay').remove()">×</button><div class="eyebrow dark">CHECKOUT</div><h2 style="font:600 34px 'Playfair Display',serif">Where should we deliver?</h2><p style="color:var(--muted)">Enter your details. Delivery is ${money(deliveryFee)}.</p>
+ <div class="checkout-form">
+ <label>Full name<input id="buyerName" autocomplete="name" placeholder="Your full name"></label>
+ <label>Email address<input id="buyerEmail" type="email" autocomplete="email" placeholder="yourname@gmail.com"></label>
+ <label>Mobile number<input id="buyerPhone" inputmode="tel" autocomplete="tel" placeholder="10-digit mobile number"></label>
  <label class="checkout-full">Address<textarea id="buyerAddress" autocomplete="street-address" placeholder="House / flat, street, area"></textarea></label>
- <label>City / Town<input id="buyerCity" autocomplete="address-level2" placeholder="City"></label><label>State<input id="buyerState" autocomplete="address-level1" placeholder="State"></label>
- <label>PIN code<input id="buyerPin" inputmode="numeric" maxlength="6" placeholder="6-digit PIN"></label><label>Landmark (optional)<input id="buyerLandmark" placeholder="Nearby landmark"></label></div>
- <div class="order-summary"><b>Order summary</b>${ids.map(id=>{let p=products.find(x=>x.id===id);return `<div class="order-line"><span>${esc(p.name)} × ${cart[id]}</span><span>${money(p.price*cart[id])}</span></div>`}).join('')}<div class="order-line"><b>Total</b><b>${money(total)}</b></div></div>
- <button class="checkout" onclick="placeOrderPrompt()">Continue to payment</button></div>`;
- document.body.appendChild(d)
+ <label>City / Town<input id="buyerCity" autocomplete="address-level2" placeholder="City"></label>
+ <label>State<input id="buyerState" autocomplete="address-level1" placeholder="State"></label>
+ <label>PIN code<input id="buyerPin" inputmode="numeric" maxlength="6" placeholder="6-digit PIN"></label>
+ <label>Landmark (optional)<input id="buyerLandmark" placeholder="Nearby landmark"></label>
+ </div>
+ <div class="promo-row"><input id="promoInput" placeholder="Have a promo code?"><button onclick="applyPromo()">Apply</button></div><div id="promoMsg" class="promo-msg"></div>
+ <div class="order-summary"><b>Order summary</b><div id="checkoutTotals"></div></div>
+ <button class="checkout" style="background:var(--ink);color:#fff;border:0;border-radius:12px;padding:14px;width:100%" onclick="placeOrderPrompt()">Place order request</button>
+ <p style="font-size:10px;color:var(--muted);margin-top:10px">Payment gateway will be added after this order flow is verified.</p></div>`;
+ document.body.appendChild(d);renderCheckoutTotals();
 }
-function placeOrderPrompt(){
- const name=document.getElementById('buyerName').value.trim(),phone=document.getElementById('buyerPhone').value.trim(),address=document.getElementById('buyerAddress').value.trim(),city=document.getElementById('buyerCity').value.trim(),state=document.getElementById('buyerState').value.trim(),pin=document.getElementById('buyerPin').value.trim();
- if(!name||!/^[6-9]\d{9}$/.test(phone)||!address||!city||!state||!/^[1-9]\d{5}$/.test(pin)){toast('Please complete all required shipping details');return}
- const order={name,phone,address,city,state,pin,landmark:document.getElementById('buyerLandmark').value.trim(),items:{...cart},createdAt:new Date().toISOString()};
- localStorage.setItem('pp_last_order',JSON.stringify(order));document.getElementById('modal').remove();toast('Shipping details saved. Payment gateway can be connected next.');cart={};persist()
+async function placeOrderPrompt(){
+ const name=document.getElementById('buyerName').value.trim(),email=document.getElementById('buyerEmail').value.trim(),phone=document.getElementById('buyerPhone').value.trim(),address=document.getElementById('buyerAddress').value.trim(),city=document.getElementById('buyerCity').value.trim(),state=document.getElementById('buyerState').value.trim(),pin=document.getElementById('buyerPin').value.trim();
+ if(!name||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||!/^[6-9]\d{9}$/.test(phone)||!address||!city||!state||!/^[1-9]\d{5}$/.test(pin)){toast('Please complete all required shipping details');return}
+ const sub=getCartSubtotal(),disc=checkoutPromo?.discount||0,total=Math.max(0,sub+deliveryFee-disc);
+ const order={id:'PP-'+new Date().getFullYear()+'-'+Math.random().toString(36).slice(2,8).toUpperCase(),name,email,customerEmail:email,phone,address,city,state,pin,landmark:document.getElementById('buyerLandmark').value.trim(),items:Object.keys(cart).map(id=>({id,name:products.find(p=>p.id===id).name,quantity:cart[id],amount:products.find(p=>p.id===id).price*cart[id]})),subtotal:sub,deliveryFee,discount:disc,promoCode:checkoutPromo?.promo?.code||'',total,status:'New',emailStatus:'sending',createdAt:new Date().toISOString()};
+ orders.unshift(order);saveCommerce();
+ document.getElementById('modal').remove();showOrderConfirmation(order);
+ sendOwnerEmail(order);
 }
 
 function renderHome(){
@@ -217,7 +280,24 @@ function showWishlist(){if(!wish.length){toast('No saved products yet');return}l
 function searchProducts(){window.lastSearch=document.getElementById('search').value;cat='All';renderHome();document.getElementById('collection').scrollIntoView()}
 function admin(){document.getElementById('modal')?.remove();let d=document.createElement('div');d.id='modal';d.className='overlay';d.innerHTML=`<div class="modal admin"><button class="close" onclick="this.closest('.overlay').remove()">×</button><div class="eyebrow dark">PRIVATE SELLER AREA</div><h2>Prime Panache Admin</h2><p>Demo admin access. Product edits are saved in this browser using localStorage. In the production deployment, this same screen should be protected with Supabase authentication and database permissions.</p><label style="display:block;color:var(--muted);font-size:12px">Admin password<input id="adminpass" type="password" style="display:block;width:100%;padding:12px;border:1px solid var(--line);border-radius:9px;margin-top:6px"></label><button class="checkout" style="background:var(--ink);color:#fff;border:0;border-radius:12px;padding:13px;width:100%;margin-top:14px" onclick="loginAdmin()">Sign in</button></div>`;document.body.appendChild(d)}
 function loginAdmin(){if(document.getElementById('adminpass').value!=='primepanache'){toast('Incorrect password');return}renderAdmin()}
-function renderAdmin(){let m=document.querySelector('#modal .admin');m.innerHTML=`<button class="close" onclick="this.closest('.overlay').remove()">×</button><div class="eyebrow dark">PRIVATE SELLER AREA</div><h2>Product Management</h2><p>Edit every product field shown on the storefront — including detailed product information, About this item bullets, and upload a new product image directly from your PC.</p><div class="admin-settings"><b>Customer support details</b><label style="display:block;font-size:11px;color:var(--muted);margin-top:9px">Support email<input id="supportEmail" value="${esc(storeSettings.email)}"></label><label style="display:block;font-size:11px;color:var(--muted)">Contact number<input id="supportPhone" value="${esc(storeSettings.phone)}"></label><button class="btn gold" onclick="saveStoreSettings()">Save support details</button></div><div class="adminbar"><button class="btn gold" onclick="editProduct(null)">+ Add product</button><button class="btn outline" style="color:var(--ink);border-color:var(--line)" onclick="resetCatalog()">Reset demo data</button></div><div>${products.map(p=>`<div class="adminrow"><img src="${p.image}"><div><b>${esc(p.name)}</b><small>${esc(p.category)} · ${money(p.price)} · Stock ${p.stock}</small></div><button onclick="editProduct('${p.id}')">Edit</button><button onclick="deleteProduct('${p.id}')">Delete</button></div>`).join('')}</div>`}
+function renderAdmin(){
+ let m=document.querySelector('#modal .admin');
+ m.innerHTML=`<button class="close" onclick="this.closest('.overlay').remove()">×</button><div class="eyebrow dark">PRIVATE SELLER AREA</div><h2>Prime Panache Admin</h2><p>Manage products, support details, promo codes and incoming order requests.</p>
+ <div class="admin-settings"><b>Customer support details</b><label style="display:block;font-size:11px;color:var(--muted);margin-top:9px">Support email<input id="supportEmail" value="${esc(storeSettings.email)}"></label><label style="display:block;font-size:11px;color:var(--muted)">Contact number<input id="supportPhone" value="${esc(storeSettings.phone)}"></label><button class="btn gold" onclick="saveStoreSettings()">Save support details</button></div>
+ <div class="admin-settings"><b>Checkout settings</b><label style="display:block;font-size:11px;color:var(--muted);margin-top:9px">Delivery fee<input id="deliveryFeeAdmin" type="number" min="0" value="${deliveryFee}"></label><button class="btn gold" onclick="saveDeliveryFee()">Save delivery fee</button></div>
+ <div class="admin-settings"><b>Promo codes</b><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px">${promoCodes.map((p,i)=>`<div class="order-admin-card"><b>${esc(p.code)}</b><p>${p.type==='percent'?p.value+'%':'₹'+p.value} off · Min ${money(p.minOrder||0)} · Exp ${esc(p.expiry||'No expiry')} · ${p.active?'Active':'Disabled'}</p><button onclick="editPromo(${i})">Edit</button> <button onclick="togglePromo(${i})">${p.active?'Disable':'Enable'}</button></div>`).join('')}</div><button class="btn gold" onclick="editPromo(null)">+ Add promo code</button></div>
+ <div class="admin-settings"><b>Orders (${orders.length})</b>${orders.length?orders.map(o=>`<div class="order-admin-card"><div class="order-admin-head"><b>${esc(o.id)}</b><span class="status-pill">${esc(o.status)}</span></div><p><b>${esc(o.name)}</b> · ${esc(o.phone)} · ${esc(o.email)}<br>${esc(o.address)}, ${esc(o.city)}, ${esc(o.state)} - ${esc(o.pin)}<br>Total: <b>${money(o.total)}</b> · Promo: ${esc(o.promoCode||'None')} · Email: ${esc(o.emailStatus||'unknown')}</p><select onchange="updateOrderStatus('${o.id}',this.value)"><option ${o.status==='New'?'selected':''}>New</option><option ${o.status==='Confirmed'?'selected':''}>Confirmed</option><option ${o.status==='Packed'?'selected':''}>Packed</option><option ${o.status==='Shipped'?'selected':''}>Shipped</option><option ${o.status==='Delivered'?'selected':''}>Delivered</option><option ${o.status==='Cancelled'?'selected':''}>Cancelled</option></select></div>`).join(''):'<p>No orders yet.</p>'}</div>
+ <div class="adminbar"><button class="btn gold" onclick="editProduct(null)">+ Add product</button><button class="btn outline" style="color:var(--ink);border-color:var(--line)" onclick="resetCatalog()">Reset demo data</button></div><div>${products.map(p=>`<div class="adminrow"><img src="${p.image}"><div><b>${esc(p.name)}</b><small>${esc(p.category)} · ${money(p.price)} · Stock ${p.stock}</small></div><button onclick="editProduct('${p.id}')">Edit</button><button onclick="deleteProduct('${p.id}')">Delete</button></div>`).join('')}</div>`;
+}
+function saveDeliveryFee(){const v=Number(document.getElementById('deliveryFeeAdmin').value);if(!Number.isFinite(v)||v<0){toast('Enter a valid delivery fee');return}deliveryFee=v;saveCommerce();toast('Delivery fee saved');renderAdmin()}
+function updateOrderStatus(id,status){const o=orders.find(x=>x.id===id);if(o){o.status=status;saveCommerce();toast('Order status updated');renderAdmin()}}
+function togglePromo(i){promoCodes[i].active=!promoCodes[i].active;saveCommerce();renderAdmin()}
+function editPromo(i){
+ const p=i===null?{code:'NEW10',type:'percent',value:10,minOrder:0,maxDiscount:0,expiry:'2026-12-31',active:true}:promoCodes[i];
+ const m=document.querySelector('#modal .admin');
+ m.innerHTML=`<button class="close" onclick="renderAdmin()">×</button><div class="eyebrow dark">PROMO CODE</div><h2>${i===null?'Add':'Edit'} promo</h2><div class="form"><div class="formgrid"><label>Code<input id="pc_code" value="${esc(p.code)}"></label><label>Type<select id="pc_type"><option value="percent" ${p.type==='percent'?'selected':''}>Percentage</option><option value="fixed" ${p.type==='fixed'?'selected':''}>Fixed amount</option></select></label><label>Discount value<input id="pc_value" type="number" value="${p.value}"></label><label>Minimum order<input id="pc_min" type="number" value="${p.minOrder||0}"></label><label>Maximum discount (percentage)<input id="pc_max" type="number" value="${p.maxDiscount||0}"></label><label>Expiry date<input id="pc_expiry" type="date" value="${esc(p.expiry||'')}"></label><label><input id="pc_active" type="checkbox" ${p.active?'checked':''}> Active</label></div><div class="formactions"><button class="btn outline" style="color:var(--ink);border-color:var(--line)" onclick="renderAdmin()">Cancel</button><button class="btn gold" onclick="savePromo(${i===null?'null':i})">Save promo</button></div></div>`;
+}
+function savePromo(i){const p={code:document.getElementById('pc_code').value.trim().toUpperCase(),type:document.getElementById('pc_type').value,value:Number(document.getElementById('pc_value').value),minOrder:Number(document.getElementById('pc_min').value||0),maxDiscount:Number(document.getElementById('pc_max').value||0),expiry:document.getElementById('pc_expiry').value,active:document.getElementById('pc_active').checked};if(!p.code||p.value<=0){toast('Enter a valid promo');return}if(i===null)promoCodes.push(p);else promoCodes[i]=p;saveCommerce();toast('Promo code saved');renderAdmin()}
 function saveStoreSettings(){const email=document.getElementById('supportEmail').value.trim(),phone=document.getElementById('supportPhone').value.trim();if(!email||!phone){toast('Enter both support email and contact number');return}storeSettings={email,phone};localStorage.setItem('pp_store_settings',JSON.stringify(storeSettings));toast('Support details saved');renderAdmin()}
 function editProduct(id){let p=id?products.find(x=>x.id===id):{id:'PP'+Date.now(),name:'New Product',category:'Lifestyle & Utility',price:0,mrp:0,rating:5,reviews:0,stock:0,badge:'New',image:products[0].image,images:[products[0].image],short:'',about:['','','','',''],details:{'Product Dimensions':'','Colour':'','Brand':'PrimePanache','Size':'','Style':'','Item Weight':''},accordions:{'Style':'','Measurements':'','Materials & Care':'','User guide':''}};let m=document.querySelector('#modal .admin');m.innerHTML=`<button class="close" onclick="renderAdmin()">×</button><div class="eyebrow dark">EDIT CATALOGUE</div><h2>${id?'Edit product':'Add product'}</h2><div class="form"><div class="formgrid">
 <label>Product name<input id="f_name" value="${esc(p.name)}"></label><label>Category<input id="f_category" value="${esc(p.category)}"></label><label>Price<input id="f_price" type="number" value="${p.price}"></label><label>MRP<input id="f_mrp" type="number" value="${p.mrp}"></label><label>Stock<input id="f_stock" type="number" value="${p.stock}"></label><label>Badge<input id="f_badge" value="${esc(p.badge)}"></label><label class="full">Short description<input id="f_short" value="${esc(p.short)}"></label>
