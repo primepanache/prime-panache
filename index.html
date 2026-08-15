@@ -217,26 +217,76 @@ function showOrderConfirmation(order){
 }
 
 function checkoutForm(){
- const ids=Object.keys(cart);
- if(!ids.length){toast('Your bag is empty');return}
- checkoutPromo=null;
- const d=document.createElement('div');d.id='modal';d.className='overlay';
- d.innerHTML=`<div class="modal"><button class="close" onclick="this.closest('.overlay').remove()">×</button><div class="eyebrow dark">CHECKOUT</div><h2 style="font:600 34px 'Playfair Display',serif">Where should we deliver?</h2><p style="color:var(--muted)">Enter your details. Delivery is ${money(deliveryFee)}.</p>
- <div class="checkout-form">
- <label>Full name<input id="buyerName" autocomplete="name" placeholder="Your full name"></label>
- <label>Email address<input id="buyerEmail" type="email" autocomplete="email" placeholder="yourname@gmail.com"></label>
- <label>Mobile number<input id="buyerPhone" inputmode="tel" autocomplete="tel" placeholder="10-digit mobile number"></label>
- <label class="checkout-full">Address<textarea id="buyerAddress" autocomplete="street-address" placeholder="House / flat, street, area"></textarea></label>
- <label>City / Town<input id="buyerCity" autocomplete="address-level2" placeholder="City"></label>
- <label>State<input id="buyerState" autocomplete="address-level1" placeholder="State"></label>
- <label>PIN code<input id="buyerPin" inputmode="numeric" maxlength="6" placeholder="6-digit PIN"></label>
- <label>Landmark (optional)<input id="buyerLandmark" placeholder="Nearby landmark"></label>
- </div>
- <div class="promo-row"><input id="promoInput" placeholder="Have a promo code?"><button onclick="applyPromo()">Apply</button></div><div id="promoMsg" class="promo-msg"></div>
- <div class="order-summary"><b>Order summary</b><div id="checkoutTotals"></div></div>
- <button type="button" id="placeOrderBtn" class="checkout" style="background:var(--ink);color:#fff;border:0;border-radius:12px;padding:14px;width:100%">Place order request</button>
- <p style="font-size:10px;color:var(--muted);margin-top:10px">Payment gateway will be added after this order flow is verified.</p></div>`;
- document.body.appendChild(d);renderCheckoutTotals();const placeBtn=document.getElementById('placeOrderBtn');if(placeBtn){placeBtn.addEventListener('click',function(e){e.preventDefault();placeOrderPrompt()})}
+  const validIds=Object.keys(cart).filter(id=>products.some(p=>p.id===id));
+  if(validIds.length!==Object.keys(cart).length){
+    const cleaned={};
+    validIds.forEach(id=>{cleaned[id]=Math.max(1,Number(cart[id])||1)});
+    cart=cleaned;
+    persist();
+  }
+
+  const ids=Object.keys(cart);
+  if(!ids.length){
+    toast('Your bag is empty');
+    return;
+  }
+
+  checkoutPromo=null;
+  document.getElementById('modal')?.remove();
+
+  const d=document.createElement('div');
+  d.id='modal';
+  d.className='overlay';
+
+  d.innerHTML=`<div class="modal">
+    <button type="button" class="close" id="closeCheckout">×</button>
+    <div class="eyebrow dark">CHECKOUT</div>
+    <h2 style="font:600 34px 'Playfair Display',serif">Where should we deliver?</h2>
+    <p style="color:var(--muted)">Enter your details. Delivery is ${money(deliveryFee)}.</p>
+
+    <div class="checkout-form">
+      <label>Full name<input id="buyerName" autocomplete="name" placeholder="Your full name"></label>
+      <label>Email address<input id="buyerEmail" type="email" autocomplete="email" placeholder="yourname@gmail.com"></label>
+      <label>Mobile number<input id="buyerPhone" inputmode="tel" maxlength="10" autocomplete="tel" placeholder="10-digit mobile number"></label>
+      <label class="checkout-full">Address<textarea id="buyerAddress" autocomplete="street-address" placeholder="House / flat, street, area"></textarea></label>
+      <label>City / Town<input id="buyerCity" autocomplete="address-level2" placeholder="City"></label>
+      <label>State<input id="buyerState" autocomplete="address-level1" placeholder="State"></label>
+      <label>PIN code<input id="buyerPin" inputmode="numeric" maxlength="6" placeholder="6-digit PIN"></label>
+      <label>Landmark (optional)<input id="buyerLandmark" placeholder="Nearby landmark"></label>
+    </div>
+
+    <div class="promo-row">
+      <input id="promoInput" placeholder="Have a promo code?">
+      <button type="button" id="applyPromoBtn">Apply</button>
+    </div>
+    <div id="promoMsg" class="promo-msg"></div>
+
+    <div class="order-summary">
+      <b>Order summary</b>
+      <div id="checkoutTotals"></div>
+    </div>
+
+    <button type="button" id="placeOrderBtn" class="checkout" style="background:var(--ink);color:#fff;border:0;border-radius:12px;padding:14px;width:100%;cursor:pointer">
+      Place order request
+    </button>
+
+    <p style="font-size:10px;color:var(--muted);margin-top:10px">
+      Payment gateway will be added after this order flow is verified.
+    </p>
+  </div>`;
+
+  document.body.appendChild(d);
+
+  document.getElementById('closeCheckout')?.addEventListener('click',()=>d.remove());
+  document.getElementById('applyPromoBtn')?.addEventListener('click',applyPromo);
+  document.getElementById('placeOrderBtn')?.addEventListener('click',placeOrderPrompt);
+
+  // Enter in promo input applies the code.
+  document.getElementById('promoInput')?.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){e.preventDefault();applyPromo();}
+  });
+
+  renderCheckoutTotals();
 }
 async function placeOrderPrompt(){
  const name=document.getElementById('buyerName').value.trim(),email=document.getElementById('buyerEmail').value.trim(),phone=document.getElementById('buyerPhone').value.trim(),address=document.getElementById('buyerAddress').value.trim(),city=document.getElementById('buyerCity').value.trim(),state=document.getElementById('buyerState').value.trim(),pin=document.getElementById('buyerPin').value.trim();
@@ -277,10 +327,92 @@ return `<main class="page"><div class="breadcrumb"><a href="#" onclick="goHome()
 </div></div></main>`}
 function toggleWish(id){wish=wish.includes(id)?wish.filter(x=>x!==id):[...wish,id];persist();if(current==='home')renderHome();else openProduct(current)}
 function add(id){cart[id]=(cart[id]||0)+1;persist();toast('Added to your bag')}
-function openCart(){let ids=Object.keys(cart),total=ids.reduce((s,id)=>s+products.find(p=>p.id===id).price*cart[id],0);document.getElementById('modal')?.remove();let d=document.createElement('div');d.id='modal';d.className='overlay';d.innerHTML=`<div class="modal"><button class="close" onclick="this.closest('.overlay').remove()">×</button><h2 style="font:600 32px 'Playfair Display',serif">Your Bag</h2>${ids.length?ids.map(id=>{let p=products.find(x=>x.id===id);return `<div class="adminrow"><img src="${p.image}"><div><b>${esc(p.name)}</b><small>${money(p.price)} · Qty ${cart[id]}</small></div><button onclick="changeCart('${id}',-1)">−</button><button onclick="changeCart('${id}',1)">+</button></div>`}).join(''):'<p>Your bag is waiting for something beautiful.</p>'}<div style="display:flex;justify-content:space-between;font-size:21px;margin:20px 0"><span>Total</span><b>${money(total)}</b></div><button type="button" id="bagCheckoutBtn" class="checkout" style="background:var(--ink);color:#fff;border:0;border-radius:12px;padding:14px;width:100%">Enter shipping details & continue</button></div>`;document.body.appendChild(d);const checkoutBtn=document.getElementById('bagCheckoutBtn');if(checkoutBtn){checkoutBtn.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();checkoutForm()})}}
-function changeCart(id,d){cart[id]=(cart[id]||0)+d;if(cart[id]<=0)delete cart[id];persist();document.getElementById('modal').remove();openCart()}
-function showWishlist(){if(!wish.length){toast('No saved products yet');return}let saved=products.filter(p=>wish.includes(p.id));document.getElementById('modal')?.remove();let d=document.createElement('div');d.id='modal';d.className='overlay';d.innerHTML=`<div class="modal"><button class="close" onclick="this.closest('.overlay').remove()">×</button><h2 style="font:600 32px 'Playfair Display',serif">Saved for later</h2><div class="grid">${saved.map(card).join('')}</div></div>`;document.body.appendChild(d)}
-function searchProducts(){window.lastSearch=document.getElementById('search').value;cat='All';renderHome();document.getElementById('collection').scrollIntoView()}
+
+// Final checkout click safety net: if the bag button survives a re-render,
+// delegation still opens the checkout form.
+document.addEventListener('click',function(e){
+  const btn=e.target.closest?.('#bagCheckoutBtn');
+  if(btn){
+    e.preventDefault();
+    e.stopPropagation();
+    checkoutForm();
+  }
+});
+
+function openCart(){
+  // Remove cart entries whose products no longer exist in the cloud catalogue.
+  // This prevents a stale localStorage cart from crashing the bag after a Supabase sync.
+  const validIds=Object.keys(cart).filter(id=>products.some(p=>p.id===id));
+  const changed=validIds.length!==Object.keys(cart).length;
+  if(changed){
+    const cleaned={};
+    validIds.forEach(id=>{cleaned[id]=Math.max(1,Number(cart[id])||1)});
+    cart=cleaned;
+    persist();
+  }
+
+  const ids=Object.keys(cart);
+  const total=ids.reduce((s,id)=>{
+    const p=products.find(x=>x.id===id);
+    return s+(p ? Number(p.price||0)*Number(cart[id]||0) : 0);
+  },0);
+
+  document.getElementById('modal')?.remove();
+
+  const d=document.createElement('div');
+  d.id='modal';
+  d.className='overlay';
+
+  const itemsHtml=ids.length
+    ? ids.map(id=>{
+        const p=products.find(x=>x.id===id);
+        return `<div class="adminrow">
+          <img src="${esc(p.image)}" alt="">
+          <div><b>${esc(p.name)}</b><small>${money(p.price)} · Qty ${cart[id]}</small></div>
+          <button type="button" data-cart-minus="${esc(id)}">−</button>
+          <button type="button" data-cart-plus="${esc(id)}">+</button>
+        </div>`;
+      }).join('')
+    : '<p>Your bag is waiting for something beautiful.</p>';
+
+  d.innerHTML=`<div class="modal">
+    <button type="button" class="close" id="closeBag">×</button>
+    <h2 style="font:600 32px 'Playfair Display',serif">Your Bag</h2>
+    ${itemsHtml}
+    <div style="display:flex;justify-content:space-between;font-size:21px;margin:20px 0">
+      <span>Total</span><b>${money(total)}</b>
+    </div>
+    ${ids.length ? `<button type="button" id="bagCheckoutBtn" class="checkout" style="background:var(--ink);color:#fff;border:0;border-radius:12px;padding:14px;width:100%;cursor:pointer">Enter shipping details &amp; continue</button>` : ''}
+  </div>`;
+
+  document.body.appendChild(d);
+
+  document.getElementById('closeBag')?.addEventListener('click',()=>d.remove());
+
+  d.querySelectorAll('[data-cart-minus]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      changeCart(btn.dataset.cartMinus,-1);
+    });
+  });
+
+  d.querySelectorAll('[data-cart-plus]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      changeCart(btn.dataset.cartPlus,1);
+    });
+  });
+
+  document.getElementById('bagCheckoutBtn')?.addEventListener('click',()=>{
+    checkoutForm();
+  });
+}
+function changeCart(id,d){
+  const p=products.find(x=>x.id===id);
+  if(!p){delete cart[id];persist();openCart();return}
+  cart[id]=(Number(cart[id])||0)+Number(d);
+  if(cart[id]<=0)delete cart[id];
+  persist();
+  openCart();
+}
 function admin(){document.getElementById('modal')?.remove();let d=document.createElement('div');d.id='modal';d.className='overlay';d.innerHTML=`<div class="modal admin"><button class="close" onclick="this.closest('.overlay').remove()">×</button><div class="eyebrow dark">PRIVATE SELLER AREA</div><h2>Prime Panache Admin</h2><p>Demo admin access. Product edits are saved in this browser using localStorage. In the production deployment, this same screen should be protected with Supabase authentication and database permissions.</p><label style="display:block;color:var(--muted);font-size:12px">Admin password<input id="adminpass" type="password" style="display:block;width:100%;padding:12px;border:1px solid var(--line);border-radius:9px;margin-top:6px"></label><button class="checkout" style="background:var(--ink);color:#fff;border:0;border-radius:12px;padding:13px;width:100%;margin-top:14px" onclick="loginAdmin()">Sign in</button></div>`;document.body.appendChild(d)}
 function loginAdmin(){if(document.getElementById('adminpass').value!=='primepanache'){toast('Incorrect password');return}renderAdmin()}
 function renderAdmin(){
