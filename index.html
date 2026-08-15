@@ -90,6 +90,11 @@ footer{background:var(--ink);color:#eee8dc;padding:45px max(22px,calc((100% - 12
 
 
 .order-full-card{padding:18px!important;margin-top:12px;border:1px solid var(--line);border-radius:16px;background:#fff}.order-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:16px 0;padding:14px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.order-detail-grid p{margin:6px 0 0;color:#514d45;line-height:1.55;font-size:12px}.order-items{margin-top:8px;border:1px solid var(--line);border-radius:10px;overflow:hidden}.order-item-line{display:flex;justify-content:space-between;gap:12px;padding:10px 12px;border-bottom:1px solid var(--line);font-size:12px}.order-item-line:last-child{border-bottom:0}.order-item-line span{display:flex;flex-direction:column;gap:3px}.order-item-line small{color:var(--muted)}.order-price-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:14px 0;padding:12px;border-radius:10px;background:#f8f6f1;font-size:11px}.order-price-grid span,.order-price-grid strong{display:flex;justify-content:space-between;gap:6px}.order-price-grid strong{grid-column:1/-1;border-top:1px solid var(--line);padding-top:10px;font-size:14px}.order-admin-actions{display:flex;align-items:end;gap:10px;flex-wrap:wrap;padding-top:12px;border-top:1px solid var(--line)}.order-admin-actions label{display:flex;flex-direction:column;gap:5px;font-size:10px;color:var(--muted)}.order-admin-actions select{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}.status-pill.paid{background:#eaf7ed;color:#256b35}@media(max-width:700px){.order-detail-grid{grid-template-columns:1fr}.order-price-grid{grid-template-columns:1fr 1fr}.order-price-grid strong{grid-column:1/-1}}
+
+.product-link{color:inherit;text-decoration:none}
+.card .product-link{display:block}
+.card h3 .product-link:hover{text-decoration:underline;text-decoration-color:var(--gold);text-underline-offset:3px}
+.product-open-btn{flex:1;padding:10px;border-radius:11px;border:1px solid var(--line);background:#fff;font-weight:700;text-align:center;color:inherit;text-decoration:none}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 </head>
@@ -125,7 +130,7 @@ return `<section class="support-panel"><div><div class="eyebrow dark">CUSTOMER S
 <footer><div><div class="brand">Prime <span>Panache</span></div><p>Curated products for people who appreciate quality, character and considered design.</p></div><div><b>SHOP</b><a href="#" onclick="goHome();return false">All products</a><a href="#" onclick="showWishlist();return false">Wishlist</a></div><div><b>POLICIES</b><a href="#" onclick="document.querySelector('.policy-grid')?.scrollIntoView({behavior:'smooth'});return false">Returns</a><a href="#" onclick="document.querySelector('.policy-grid')?.scrollIntoView({behavior:'smooth'});return false">Terms & Conditions</a><a href="#" onclick="document.querySelector('.address-card')?.scrollIntoView({behavior:'smooth'});return false">Business address</a></div></footer>`
 }
 function shell(body){document.getElementById('app').innerHTML=header()+body+footer()}
-function goHome(){current='home';history.pushState({},'',location.pathname||'/');renderHome();scrollTo(0,0)}
+function goHome(){current='home';history.pushState({},'',location.origin+'/');renderHome();window.scrollTo({top:0,behavior:'smooth'})}
 
 function addActionAnimation(kind){
   const btn=document.querySelector('.product-page .buyrow .buy');
@@ -515,19 +520,22 @@ function buyNow(id){
 }
 function card(p){
   let off=p.mrp?Math.round((1-p.price/p.mrp)*100):0;
-  return `<article class="card" data-product-card="${esc(p.id)}" onclick="openProduct('${p.id}')">
+  const href=productUrl(p.id);
+  return `<article class="card" data-product-card="${esc(p.id)}">
     <div class="cardimg">
-      <img src="${esc(p.image)}" alt="${esc(p.name)}">
+      <a class="product-link" href="${esc(href)}" aria-label="View ${esc(p.name)}">
+        <img src="${esc(p.image)}" alt="${esc(p.name)}">
+      </a>
       <span class="badge">${esc(p.badge)}</span>
       <button class="wish action-btn" type="button" data-wish-id="${esc(p.id)}" onclick="event.stopPropagation();toggleWish('${p.id}')" aria-label="Save ${esc(p.name)}">${wish.includes(p.id)?'♥':'♡'}</button>
     </div>
     <div class="cardbody">
       <div class="cat">${esc(p.category)}</div>
-      <h3>${esc(p.name)}</h3>
+      <h3><a class="product-link" href="${esc(href)}">${esc(p.name)}</a></h3>
       <div class="rating">★ ${p.rating} <span>(${p.reviews||0})</span></div>
       <div class="price">${money(p.price)} <del>${money(p.mrp)}</del><span class="off">${off}% off</span></div>
       <div class="actions">
-        <button type="button" data-open-product="${esc(p.id)}" onclick="event.stopPropagation();openProduct('${p.id}')">View details</button>
+        <a class="product-open-btn" href="${esc(href)}">View details</a>
         <button type="button" class="dark action-btn" data-add-product="${esc(p.id)}" onclick="event.stopPropagation();add('${p.id}');addActionAnimation('cart')">Add to bag</button>
       </div>
     </div>
@@ -644,11 +652,70 @@ function showWishlist(){
   scrollTo(0,0);
 }
 function searchProducts(){window.lastSearch=document.getElementById('search').value;cat='All';renderHome();document.getElementById('collection').scrollIntoView()}
-function admin(){document.getElementById('modal')?.remove();let d=document.createElement('div');d.id='modal';d.className='overlay';d.innerHTML=`<div class="modal admin"><button class="close" onclick="this.closest('.overlay').remove()">×</button><div class="eyebrow dark">PRIVATE SELLER AREA</div><h2>Prime Panache Admin</h2><p>Demo admin access. Product edits are saved in this browser using localStorage. In the production deployment, this same screen should be protected with Supabase authentication and database permissions.</p><label style="display:block;color:var(--muted);font-size:12px">Admin password<input id="adminpass" type="password" style="display:block;width:100%;padding:12px;border:1px solid var(--line);border-radius:9px;margin-top:6px"></label><button class="checkout" style="background:var(--ink);color:#fff;border:0;border-radius:12px;padding:13px;width:100%;margin-top:14px" onclick="loginAdmin()">Sign in</button></div>`;document.body.appendChild(d)}
-function loginAdmin(){if(document.getElementById('adminpass').value!=='primepanache'){toast('Incorrect password');return}renderAdmin()}
+function admin(){
+  document.getElementById('modal')?.remove();
+  const d=document.createElement('div');
+  d.id='modal'; d.className='overlay';
+  d.innerHTML=`<div class="modal admin" style="max-width:520px">
+    <button class="close" type="button" id="adminClose">×</button>
+    <div class="eyebrow dark">PRIVATE SELLER AREA</div>
+    <h2>Prime Panache Admin</h2>
+    <p>Sign in with your Prime Panache administrator account.</p>
+    <form id="adminLoginForm">
+      <label style="display:block;color:var(--muted);font-size:12px;margin-top:12px">
+        Admin email
+        <input id="adminEmail" type="email" autocomplete="username" required placeholder="admin@gmail.com" style="display:block;width:100%;padding:12px;border:1px solid var(--line);border-radius:9px;margin-top:6px">
+      </label>
+      <label style="display:block;color:var(--muted);font-size:12px;margin-top:12px">
+        Password
+        <input id="adminpass" type="password" autocomplete="current-password" required placeholder="Your password" style="display:block;width:100%;padding:12px;border:1px solid var(--line);border-radius:9px;margin-top:6px">
+      </label>
+      <div id="adminLoginMsg" style="font-size:12px;color:#a54c36;margin-top:10px;min-height:18px"></div>
+      <button id="adminSignIn" type="submit" class="checkout" style="background:var(--ink);color:#fff;border:0;border-radius:12px;padding:13px;width:100%;margin-top:8px">
+        Sign in securely
+      </button>
+    </form>
+  </div>`;
+  document.body.appendChild(d);
+  document.getElementById('adminClose')?.addEventListener('click',()=>d.remove());
+  document.getElementById('adminLoginForm')?.addEventListener('submit',loginAdmin);
+}
+async function loginAdmin(e){
+  e?.preventDefault();
+  const email=document.getElementById('adminEmail')?.value.trim();
+  const password=document.getElementById('adminpass')?.value||'';
+  const btn=document.getElementById('adminSignIn');
+  const msg=document.getElementById('adminLoginMsg');
+  if(!sb){if(msg)msg.textContent='Cloud authentication is unavailable. Please refresh.';return}
+  if(!email||!password){if(msg)msg.textContent='Enter your admin email and password.';return}
+  if(btn){btn.disabled=true;btn.textContent='Signing in…'}
+  if(msg)msg.textContent='';
+  try{
+    const {data,error}=await sb.auth.signInWithPassword({email,password});
+    if(error||!data?.user) throw new Error(error?.message||'Sign in failed');
+    const {data:adminRow,error:adminError}=await sb.from('admin_users').select('user_id').eq('user_id',data.user.id).maybeSingle();
+    if(adminError) throw new Error(adminError.message);
+    if(!adminRow){
+      await sb.auth.signOut();
+      throw new Error('This account is not authorized as a Prime Panache administrator.');
+    }
+    await loadAdminCloud();
+    document.getElementById('modal')?.remove();
+    renderAdmin();
+  }catch(err){
+    console.error(err);
+    if(msg)msg.textContent=err.message||'Unable to sign in.';
+    if(btn){btn.disabled=false;btn.textContent='Sign in securely'}
+  }
+}
+async function signOutAdmin(){
+  if(sb) await sb.auth.signOut();
+  document.getElementById('modal')?.remove();
+  admin();
+}
 function renderAdmin(){
  let m=document.querySelector('#modal .admin');if(!m){const d=document.createElement('div');d.id='modal';d.className='overlay';d.innerHTML='<div class="modal admin"></div>';document.body.appendChild(d);m=d.querySelector('.admin')}
- m.innerHTML=`<button class="close" onclick="this.closest('.overlay').remove()">×</button><div class="eyebrow dark">PRIVATE SELLER AREA</div><h2>Prime Panache Admin</h2><p>Cloud dashboard — products and customer orders are stored in Supabase.</p>
+ m.innerHTML=`<button class="close" onclick="this.closest('.overlay').remove()">×</button><div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><div class="eyebrow dark">PRIVATE SELLER AREA</div><button type="button" class="admin-signout" onclick="signOutAdmin()">Sign out</button></div><h2>Prime Panache Admin</h2><p>Cloud dashboard — products and customer orders are stored in Supabase.</p>
  <div class="admin-settings"><div style="display:flex;justify-content:space-between;align-items:center"><b>Customer support details</b><span class="status-pill">Cloud saved</span></div><label style="display:block;font-size:11px;color:var(--muted);margin-top:9px">Support email<input id="supportEmail" value="${esc(storeSettings.email)}"></label><label style="display:block;font-size:11px;color:var(--muted)">Contact number<input id="supportPhone" value="${esc(storeSettings.phone)}"></label><button class="btn gold" onclick="saveStoreSettings()">Save support details</button></div>
  <div class="admin-settings"><b>Checkout settings</b><label style="display:block;font-size:11px;color:var(--muted);margin-top:9px">Delivery fee<input id="deliveryFeeAdmin" type="number" min="0" value="${deliveryFee}"></label><button class="btn gold" onclick="saveDeliveryFee()">Save delivery fee</button></div>
  <div class="admin-settings"><b>Promo codes</b><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px">${promoCodes.map((p,i)=>`<div class="order-admin-card"><b>${esc(p.code)}</b><p>${p.type==='percent'?p.value+'%':'₹'+p.value} off · Min ${money(p.minOrder||0)} · Exp ${esc(p.expiry||'No expiry')} · ${p.active?'Active':'Disabled'}</p><button onclick="editPromo(${i})">Edit</button> <button onclick="togglePromo(${i})">${p.active?'Disable':'Enable'}</button></div>`).join('')}</div><button class="btn gold" onclick="editPromo(null)">+ Add promo code</button></div>
@@ -752,17 +819,37 @@ document.addEventListener('click', function(e){
   }
 });
 
-async function initCloud(){
-  if(location.pathname==='/admin'){admin();}
-  else {renderHome();}
-  if(sb) await loadCloudData();
-  if(location.pathname!=='/admin' && new URLSearchParams(location.search).get('product')){
-    const pid=new URLSearchParams(location.search).get('product');
-    if(products.some(p=>p.id===pid))openProduct(pid,false);
+async async function initCloud(){
+  const isAdmin=location.pathname==='/admin';
+  // Always render something immediately.
+  if(isAdmin) admin();
+  else renderHome();
+
+  if(sb){
+    await loadCloudData();
+  }
+
+  if(isAdmin){
+    const {data:{user}}=sb ? await sb.auth.getUser() : {data:{user:null}};
+    if(user){
+      const {data:adminRow}=await sb.from('admin_users').select('user_id').eq('user_id',user.id).maybeSingle();
+      if(adminRow){
+        await loadAdminCloud();
+        document.getElementById('modal')?.remove();
+        renderAdmin();
+      }
+    }
+    return;
+  }
+
+  const pid=new URLSearchParams(location.search).get('product');
+  if(pid){
+    if(products.some(p=>String(p.id)===String(pid))) openProduct(pid,false);
   }
 }
-
 window.addEventListener('popstate',()=>{const pid=new URLSearchParams(location.search).get('product');if(pid&&products.some(p=>p.id===pid))openProduct(pid,false);else if(location.pathname==='/admin')admin();else goHome()});
+window.admin=admin;
+window.loginAdmin=loginAdmin;
 window.openProduct=openProduct;
 window.add=add;
 window.openCart=openCart;
