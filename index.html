@@ -73,7 +73,23 @@ footer{background:var(--ink);color:#eee8dc;padding:45px max(22px,calc((100% - 12
 
 .product-heart{position:absolute;top:14px;right:14px;z-index:4;width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:#fffdf9e8;box-shadow:0 5px 18px rgba(0,0,0,.08);font-size:19px;display:grid;place-items:center;cursor:pointer;transition:.25s}.product-heart:hover{transform:scale(1.08)}.product-heart.active{color:#9a3150}.buy-now{background:linear-gradient(135deg,#b98a43,#8f6328)!important;color:#fff!important;border:0!important;box-shadow:0 8px 20px rgba(143,99,40,.22)}.buy-now:hover{transform:translateY(-2px);box-shadow:0 11px 24px rgba(143,99,40,.28)}.share-product{margin-top:10px;border:1px solid var(--line);background:#fff;border-radius:10px;padding:9px 12px;font-size:11px;cursor:pointer}.policy-grid{max-width:1236px;margin:0 auto 25px;padding:0 30px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.policy-card{border:1px solid var(--line);background:#fff;border-radius:16px;padding:18px}.policy-card h4{margin:0 0 7px;font:600 17px "Playfair Display",serif}.policy-card p{margin:0;color:var(--muted);font-size:12px;line-height:1.6}.address-card{grid-column:1/-1}.wishlist-page{min-height:55vh}.wishlist-empty{border:1px solid var(--line);border-radius:18px;padding:40px;text-align:center;background:#fff}.wishlist-empty h2{font:600 30px "Playfair Display",serif;margin:0 0 8px}.wishlist-empty p{color:var(--muted)}@media(max-width:700px){.policy-grid{grid-template-columns:1fr;padding:0 22px}.address-card{grid-column:auto}}
 
+
+.upi-pay-box{margin-top:18px;border:1px solid #eadfcb;border-radius:18px;background:linear-gradient(145deg,#fffaf0,#fff);padding:18px}
+.upi-brand{display:flex;align-items:center;gap:10px;font-weight:800;color:#5b2b92}.upi-dot{width:32px;height:32px;border-radius:10px;background:#6739b7;color:#fff;display:grid;place-items:center;font-weight:900}
+.upi-pay-btn{width:100%;border:0;border-radius:12px;padding:14px 16px;background:linear-gradient(135deg,#6739b7,#4b218d);color:#fff;font-weight:800;cursor:pointer;box-shadow:0 9px 22px rgba(103,57,183,.22);transition:.2s}
+.upi-pay-btn:hover{transform:translateY(-2px);box-shadow:0 12px 25px rgba(103,57,183,.3)}
+.upi-note{font-size:11px;color:var(--muted);line-height:1.55;margin-top:8px}
+.upi-modal{text-align:center;max-width:460px}
+.upi-qr{width:250px;height:250px;margin:18px auto;border:12px solid #fff;border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.08);display:grid;place-items:center}
+.upi-qr img,.upi-qr canvas{max-width:100%;max-height:100%}
+.upi-amount{font:600 28px "Playfair Display",serif;margin:4px 0 12px}
+.upi-actions{display:flex;gap:10px;flex-direction:column}
+.upi-secondary{border:1px solid var(--line);background:#fff;border-radius:11px;padding:12px;cursor:pointer}
+.payment-pending{padding:12px;border-radius:12px;background:#fff7e6;border:1px solid #ead4a2;font-size:12px;color:#745a20;line-height:1.5}
+@media(min-width:700px){.upi-actions{flex-direction:row}.upi-actions>*{flex:1}}
+
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 </head>
 <body>
 <div id="app"></div>
@@ -220,7 +236,7 @@ function sendOwnerEmail(order){
    customerName:order.name,orderId:order.id,
    items:order.items.map(i=>({name:i.name,quantity:i.quantity,amount:i.amount})),
    subtotal:order.subtotal,deliveryFee:order.deliveryFee,discount:order.discount,total:order.total,
-   address:{name:order.name,address:order.address,city:order.city,state:order.state,pin:order.pin,phone:order.phone}
+   address:{name:order.name,address:order.address,city:order.city,state:order.state,pin:order.pin,phone:order.phone},paymentStatus:order.paymentStatus||'pending'
  })}).then(r=>r.json()).then(x=>{
    order.emailStatus=x.ownerEmailSent?'sent':'failed';localStorage.setItem('pp_orders',JSON.stringify(orders));
  }).catch(()=>{order.emailStatus='failed';localStorage.setItem('pp_orders',JSON.stringify(orders))});
@@ -281,12 +297,14 @@ function checkoutForm(){
       <div id="checkoutTotals"></div>
     </div>
 
-    <button type="button" id="placeOrderBtn" class="checkout" style="background:var(--ink);color:#fff;border:0;border-radius:12px;padding:14px;width:100%;cursor:pointer">
-      Place order request
-    </button>
+    <div class="upi-pay-box">
+      <div class="upi-brand"><span class="upi-dot">U</span> Pay securely with UPI</div>
+      <p class="upi-note">On Android, tapping the button can open your installed UPI app. On desktop, scan the generated QR code with any UPI app.</p>
+      <button type="button" id="placeOrderBtn" class="upi-pay-btn">Pay with UPI →</button>
+    </div>
 
     <p style="font-size:10px;color:var(--muted);margin-top:10px">
-      Payment gateway will be added after this order flow is verified.
+      UPI payments are verified before an order is treated as paid. Your payment app may ask you to confirm the amount.
     </p>
   </div>`;
 
@@ -303,16 +321,110 @@ function checkoutForm(){
 
   renderCheckoutTotals();
 }
-async function placeOrderPrompt(){
- const name=document.getElementById('buyerName').value.trim(),email=document.getElementById('buyerEmail').value.trim(),phone=document.getElementById('buyerPhone').value.trim(),address=document.getElementById('buyerAddress').value.trim(),city=document.getElementById('buyerCity').value.trim(),state=document.getElementById('buyerState').value.trim(),pin=document.getElementById('buyerPin').value.trim();
- if(!name||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||!/^[6-9]\d{9}$/.test(phone)||!address||!city||!state||!/^[1-9]\d{5}$/.test(pin)){toast('Please complete all required shipping details');return}
+function buildPendingOrderFromCheckout(){
+ const name=document.getElementById('buyerName')?.value.trim();
+ const email=document.getElementById('buyerEmail')?.value.trim();
+ const phone=document.getElementById('buyerPhone')?.value.trim();
+ const address=document.getElementById('buyerAddress')?.value.trim();
+ const city=document.getElementById('buyerCity')?.value.trim();
+ const state=document.getElementById('buyerState')?.value.trim();
+ const pin=document.getElementById('buyerPin')?.value.trim();
+ if(!name||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||!/^[6-9]\d{9}$/.test(phone)||!address||!city||!state||!/^[1-9]\d{5}$/.test(pin)){
+   toast('Please complete all required shipping details'); return null;
+ }
  const sub=getCartSubtotal(),disc=checkoutPromo?.discount||0,total=Math.max(0,sub+deliveryFee-disc);
- const order={id:'PP-'+new Date().getFullYear()+'-'+Math.random().toString(36).slice(2,8).toUpperCase(),name,email,customerEmail:email,phone,address,city,state,pin,landmark:document.getElementById('buyerLandmark').value.trim(),items:Object.keys(cart).map(id=>({id,name:products.find(p=>p.id===id).name,quantity:cart[id],amount:products.find(p=>p.id===id).price*cart[id]})),subtotal:sub,deliveryFee,discount:disc,promoCode:checkoutPromo?.promo?.code||'',total,status:'New',emailStatus:'sending',createdAt:new Date().toISOString()};
- orders.unshift(order);saveCommerce();
- document.getElementById('modal').remove();showOrderConfirmation(order);
- sendOwnerEmail(order);
+ const id='PP-'+new Date().getFullYear()+'-'+Math.random().toString(36).slice(2,8).toUpperCase();
+ return {
+   id,name,email,customerEmail:email,phone,address,city,state,pin,
+   landmark:document.getElementById('buyerLandmark')?.value.trim()||'',
+   items:Object.keys(cart).map(pid=>{
+     const p=products.find(x=>x.id===pid);
+     return {id:pid,name:p.name,quantity:Number(cart[pid]),amount:Number(p.price)*Number(cart[pid])};
+   }),
+   subtotal:sub,deliveryFee,discount:disc,promoCode:checkoutPromo?.promo?.code||'',
+   total,status:'Payment Pending',paymentStatus:'pending',emailStatus:'pending',
+   createdAt:new Date().toISOString()
+ };
 }
 
+function openUpiPayment(order){
+ const pa='varuneshanandan11b1svv@oksbi';
+ const note=`Prime Panache ${order.id}`;
+ const upiUri=`upi://pay?pa=${encodeURIComponent(pa)}&pn=${encodeURIComponent('Prime Panache')}&am=${encodeURIComponent(Number(order.total).toFixed(2))}&cu=INR&tn=${encodeURIComponent(note)}`;
+
+ const d=document.createElement('div');
+ d.id='upiPaymentModal';d.className='overlay';
+ d.innerHTML=`<div class="modal upi-modal">
+   <button type="button" class="close" id="closeUpi">×</button>
+   <div class="upi-brand" style="justify-content:center"><span class="upi-dot">U</span> UPI PAYMENT</div>
+   <h2 style="font:600 32px 'Playfair Display',serif;margin:12px 0 4px">Pay ${money(order.total)}</h2>
+   <p style="color:var(--muted);font-size:12px;margin:0">Order ${esc(order.id)}</p>
+   <div id="upiQr" class="upi-qr"></div>
+   <div class="payment-pending"><b>UPI ID:</b> ${esc(pa)}<br>Pay exactly <b>${money(order.total)}</b>. Payment is not considered confirmed until verified.</div>
+   <div class="upi-actions" style="margin-top:14px">
+     <button type="button" class="upi-pay-btn" id="openUpiApp">Open UPI App</button>
+     <button type="button" class="upi-secondary" id="copyUpi">Copy UPI ID</button>
+   </div>
+   <button type="button" class="btn gold" id="paidButton" style="width:100%;margin-top:10px">I've completed payment</button>
+   <p style="font-size:10px;color:var(--muted);margin-top:9px">This button only records that you attempted payment. We will verify the payment before marking the order as paid.</p>
+ </div>`;
+ document.body.appendChild(d);
+
+ document.getElementById('closeUpi')?.addEventListener('click',()=>d.remove());
+ document.getElementById('openUpiApp')?.addEventListener('click',()=>{
+   window.location.href=upiUri;
+ });
+ document.getElementById('copyUpi')?.addEventListener('click',()=>{
+   navigator.clipboard?.writeText(pa).then(()=>toast('UPI ID copied')).catch(()=>toast(pa));
+ });
+ document.getElementById('paidButton')?.addEventListener('click',()=>{
+   order.status='Payment Pending — verify UPI credit';
+   order.paymentStatus='pending';
+   orders.unshift(order);
+   saveCommerce();
+   d.remove();
+   document.getElementById('modal')?.remove();
+   showUpiPendingConfirmation(order);
+   sendOwnerEmail(order);
+   cart={};persist();
+ });
+
+ const makeQr=()=>{
+   if(window.QRCode){
+     document.getElementById('upiQr').innerHTML='';
+     new QRCode(document.getElementById('upiQr'),{
+       text:upiUri,width:226,height:226,colorDark:'#111',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M
+     });
+   }else{
+     document.getElementById('upiQr').innerHTML='<p style="font-size:12px;color:#777;padding:20px">QR unavailable. Use the UPI ID shown below.</p>';
+   }
+ };
+ if(window.QRCode) makeQr(); else setTimeout(makeQr,800);
+}
+
+function showUpiPendingConfirmation(order){
+ const d=document.createElement('div');d.id='modal';d.className='overlay';
+ d.innerHTML=`<div class="modal" style="text-align:center">
+   <div style="font-size:48px">⏳</div>
+   <div class="eyebrow dark">PAYMENT PENDING VERIFICATION</div>
+   <h2 style="font:600 34px 'Playfair Display',serif">Thanks, ${esc(order.name)}.</h2>
+   <p style="color:var(--muted)">We've recorded your order request. Your UPI payment will be verified before the order is treated as paid.</p>
+   <div class="order-summary" style="text-align:left">
+     <div class="order-line"><span>Order ID</span><b>${esc(order.id)}</b></div>
+     <div class="order-line"><span>Amount</span><b>${money(order.total)}</b></div>
+     <div class="order-line"><span>Payment</span><b>UPI — Pending verification</b></div>
+   </div>
+   <p style="font-size:11px;color:var(--muted)">If the payment was successful, keep your UPI transaction reference for support.</p>
+   <button class="btn gold" onclick="this.closest('.overlay').remove();goHome()">Continue shopping</button>
+ </div>`;
+ document.body.appendChild(d);
+}
+
+async function placeOrderPrompt(){
+ const order=buildPendingOrderFromCheckout();
+ if(!order)return;
+ openUpiPayment(order);
+}
 function renderHome(){
 let q=(window.lastSearch||'').toLowerCase(), s=window.sort||'featured';
 let a=products.filter(p=>(cat==='All'||p.category===cat)&&(!q||(p.name+' '+p.category+' '+p.short+' '+p.description).toLowerCase().includes(q)));
