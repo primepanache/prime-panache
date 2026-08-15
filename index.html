@@ -515,11 +515,11 @@ function buyNow(id){
 }
 function card(p){
   let off=p.mrp?Math.round((1-p.price/p.mrp)*100):0;
-  return `<article class="card" data-product-card="${esc(p.id)}">
+  return `<article class="card" data-product-card="${esc(p.id)}" onclick="openProduct('${p.id}')">
     <div class="cardimg">
       <img src="${esc(p.image)}" alt="${esc(p.name)}">
       <span class="badge">${esc(p.badge)}</span>
-      <button class="wish action-btn" type="button" data-wish-id="${esc(p.id)}" aria-label="Save ${esc(p.name)}">${wish.includes(p.id)?'♥':'♡'}</button>
+      <button class="wish action-btn" type="button" data-wish-id="${esc(p.id)}" onclick="event.stopPropagation();toggleWish('${p.id}')" aria-label="Save ${esc(p.name)}">${wish.includes(p.id)?'♥':'♡'}</button>
     </div>
     <div class="cardbody">
       <div class="cat">${esc(p.category)}</div>
@@ -527,16 +527,26 @@ function card(p){
       <div class="rating">★ ${p.rating} <span>(${p.reviews||0})</span></div>
       <div class="price">${money(p.price)} <del>${money(p.mrp)}</del><span class="off">${off}% off</span></div>
       <div class="actions">
-        <button type="button" data-open-product="${esc(p.id)}">View details</button>
-        <button type="button" class="dark action-btn" data-add-product="${esc(p.id)}">Add to bag</button>
+        <button type="button" data-open-product="${esc(p.id)}" onclick="event.stopPropagation();openProduct('${p.id}')">View details</button>
+        <button type="button" class="dark action-btn" data-add-product="${esc(p.id)}" onclick="event.stopPropagation();add('${p.id}');addActionAnimation('cart')">Add to bag</button>
       </div>
     </div>
   </article>`;
 }
-function openProduct(id,push=true){let p=products.find(x=>x.id===id);if(!p){toast('Product not found');return}current=id;if(push)history.pushState({product:id},'',productUrl(id));document.getElementById('app').innerHTML=header()+productPage(p)+footer();scrollTo(0,0)}
+function openProduct(id,push=true){
+  const p=products.find(x=>String(x.id)===String(id));
+  if(!p){
+    toast('Product is still loading. Please try again.');
+    return;
+  }
+  current=id;
+  if(push) history.pushState({product:id},'',productUrl(id));
+  document.getElementById('app').innerHTML=header()+productPage(p)+footer();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
 function productPage(p){
 return `<main class="page"><div class="breadcrumb"><a href="#" onclick="goHome();return false">Home</a> / ${esc(p.category)} / ${esc(p.name)}</div>
-<div class="product-page"><div class="gallery-wrap"><div class="thumbs">${(p.images&&p.images.length?p.images:[p.image]).map((im,i)=>`<button class="thumb ${i===0?'active':''}" onclick="setGallery(${i},'${p.id}')"><img src="${im}"></button>`).join('')}</div><div class="main-gallery"><button type="button" class="product-heart ${wish.includes(p.id)?'active':''}" aria-label="Wishlist" data-wish-id="${p.id}">${wish.includes(p.id)?'♥':'♡'}</button><button type="button" class="slide-arrow left" data-slide-gallery="-1" data-slide-product="${p.id}">‹</button><img id="mainProductImage" src="${(p.images&&p.images.length?p.images:[p.image])[0]}" alt="${esc(p.name)}"><button type="button" class="slide-arrow right" data-slide-gallery="1" data-slide-product="${p.id}">›</button><span class="slide-count" id="slideCount">1 / ${(p.images&&p.images.length?p.images.length:1)}</span></div></div><div class="product-info"><div class="cat">${esc(p.category)}</div><h1>${esc(p.name)}</h1><div class="rating">★ ${p.rating} <span>(${p.reviews||0} customer reviews)</span></div><div class="product-price">${money(p.price)} <del>${money(p.mrp)}</del></div><p class="lead">${esc(p.short)}</p><div class="${p.stock<=3?'stock low':'stock'}">${p.stock<=3?'Only '+p.stock+' left in stock':'In stock · Ready to dispatch'}</div><div class="quantity"><button onclick="quantityChange('${p.id}',-1)">−</button><input id="qtyInput" type="number" min="1" max="${p.stock}" value="1" oninput="this.value=Math.max(1,Math.min(${p.stock},parseInt(this.value||1)))"><button onclick="quantityChange('${p.id}',1)">+</button></div><div class="buyrow"><button type="button" class="buy action-btn" data-add-quantity="${p.id}">🛍 Add to bag</button><button type="button" class="buy buy-now action-btn" data-buy-now="${p.id}">✦ Buy Now</button></div><button class="share-product" onclick="copyProductLink('${p.id}')">↗ Share product</button>
+<div class="product-page"><div class="gallery-wrap"><div class="thumbs">${(p.images&&p.images.length?p.images:[p.image]).map((im,i)=>`<button class="thumb ${i===0?'active':''}" onclick="setGallery(${i},'${p.id}')"><img src="${im}"></button>`).join('')}</div><div class="main-gallery"><button type="button" class="product-heart ${wish.includes(p.id)?'active':''}" aria-label="Wishlist" data-wish-id="${p.id}" onclick="toggleWish('${p.id}')">${wish.includes(p.id)?'♥':'♡'}</button><button type="button" class="slide-arrow left" data-slide-gallery="-1" data-slide-product="${p.id}" onclick="slideGallery(-1,'${p.id}')">‹</button><img id="mainProductImage" src="${(p.images&&p.images.length?p.images:[p.image])[0]}" alt="${esc(p.name)}"><button type="button" class="slide-arrow right" data-slide-gallery="1" data-slide-product="${p.id}" onclick="slideGallery(1,'${p.id}')">›</button><span class="slide-count" id="slideCount">1 / ${(p.images&&p.images.length?p.images.length:1)}</span></div></div><div class="product-info"><div class="cat">${esc(p.category)}</div><h1>${esc(p.name)}</h1><div class="rating">★ ${p.rating} <span>(${p.reviews||0} customer reviews)</span></div><div class="product-price">${money(p.price)} <del>${money(p.mrp)}</del></div><p class="lead">${esc(p.short)}</p><div class="${p.stock<=3?'stock low':'stock'}">${p.stock<=3?'Only '+p.stock+' left in stock':'In stock · Ready to dispatch'}</div><div class="quantity"><button onclick="quantityChange('${p.id}',-1)">−</button><input id="qtyInput" type="number" min="1" max="${p.stock}" value="1" oninput="this.value=Math.max(1,Math.min(${p.stock},parseInt(this.value||1)))"><button onclick="quantityChange('${p.id}',1)">+</button></div><div class="buyrow"><button type="button" class="buy action-btn" data-add-quantity="${p.id}" onclick="addQuantity('${p.id}')">🛍 Add to bag</button><button type="button" class="buy buy-now action-btn" data-buy-now="${p.id}" onclick="buyNow('${p.id}')">✦ Buy Now</button></div><button class="share-product" onclick="copyProductLink('${p.id}')">↗ Share product</button>
 <div class="delivery-box"><div class="delivery-title"><span class="pin-icon">⌖</span> Check delivery to your PIN code</div><div class="pin-form"><input id="deliveryPin" inputmode="numeric" maxlength="6" placeholder="Enter 6-digit PIN code" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)" onkeydown="if(event.key==='Enter')checkDelivery(this.value)"><button onclick="checkDelivery(document.getElementById('deliveryPin').value)">Check</button></div><div id="deliveryResult" class="delivery-result">Enter your PIN to see an estimated delivery date.</div></div>
 <div class="detail-title">About this item</div><ul class="about-list">${p.about.map(x=>'<li>'+esc(x)+'</li>').join('')}</ul>
 <div class="detail-title">Product information</div><div class="item-details">${Object.entries(p.details).map(([k,v])=>`<div><b>${esc(k)}</b><span>${esc(v)}</span></div>`).join('')}</div>
@@ -763,5 +773,10 @@ window.slideGallery=slideGallery;
 window.setGallery=setGallery;
 window.checkoutForm=checkoutForm;
 window.goHome=goHome;
+window.quantityChange=quantityChange;
+window.checkDelivery=checkDelivery;
+window.copyProductLink=copyProductLink;
+window.submitReview=submitReview;
+window.searchProducts=searchProducts;
 initCloud();
 </script></body></html>
