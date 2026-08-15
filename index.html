@@ -88,6 +88,8 @@ footer{background:var(--ink);color:#eee8dc;padding:45px max(22px,calc((100% - 12
 .payment-pending{padding:12px;border-radius:12px;background:#fff7e6;border:1px solid #ead4a2;font-size:12px;color:#745a20;line-height:1.5}
 @media(min-width:700px){.upi-actions{flex-direction:row}.upi-actions>*{flex:1}}
 
+
+.order-full-card{padding:18px!important;margin-top:12px;border:1px solid var(--line);border-radius:16px;background:#fff}.order-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:16px 0;padding:14px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.order-detail-grid p{margin:6px 0 0;color:#514d45;line-height:1.55;font-size:12px}.order-items{margin-top:8px;border:1px solid var(--line);border-radius:10px;overflow:hidden}.order-item-line{display:flex;justify-content:space-between;gap:12px;padding:10px 12px;border-bottom:1px solid var(--line);font-size:12px}.order-item-line:last-child{border-bottom:0}.order-item-line span{display:flex;flex-direction:column;gap:3px}.order-item-line small{color:var(--muted)}.order-price-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:14px 0;padding:12px;border-radius:10px;background:#f8f6f1;font-size:11px}.order-price-grid span,.order-price-grid strong{display:flex;justify-content:space-between;gap:6px}.order-price-grid strong{grid-column:1/-1;border-top:1px solid var(--line);padding-top:10px;font-size:14px}.order-admin-actions{display:flex;align-items:end;gap:10px;flex-wrap:wrap;padding-top:12px;border-top:1px solid var(--line)}.order-admin-actions label{display:flex;flex-direction:column;gap:5px;font-size:10px;color:var(--muted)}.order-admin-actions select{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}.status-pill.paid{background:#eaf7ed;color:#256b35}@media(max-width:700px){.order-detail-grid{grid-template-columns:1fr}.order-price-grid{grid-template-columns:1fr 1fr}.order-price-grid strong{grid-column:1/-1}}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 </head>
@@ -350,7 +352,27 @@ function buildPendingOrderFromCheckout(){
 function openUpiPayment(order){
  const pa='varuneshanandan11b1svv@oksbi';
  const note=`Prime Panache ${order.id}`;
- const upiUri=`upi://pay?pa=${encodeURIComponent(pa)}&pn=${encodeURIComponent('Prime Panache')}&am=${encodeURIComponent(Number(order.total).toFixed(2))}&cu=INR&tn=${encodeURIComponent(note)}`;
+ const amount=Number(order.total).toFixed(2);
+
+ // NPCI-style merchant UPI deep link. The unique transaction reference
+ // helps UPI apps identify the merchant payment request.
+ const tr=String(order.id).replace(/[^A-Za-z0-9]/g,'').slice(0,35);
+ const params=[
+   `pa=${encodeURIComponent(pa)}`,
+   `pn=${encodeURIComponent('Prime Panache')}`,
+   `tr=${encodeURIComponent(tr)}`,
+   `tn=${encodeURIComponent(note)}`,
+   `am=${encodeURIComponent(amount)}`,
+   `cu=INR`
+ ].join('&');
+
+ const upiUri=`upi://pay?${params}`;
+
+ // Android Chrome/WebView is more reliable with an Android intent URI.
+ // Other mobile/desktop browsers keep the standard UPI URI.
+ const androidIntent=`intent://pay?${params}#Intent;scheme=upi;end`;
+ const isAndroid=/Android/i.test(navigator.userAgent);
+ const launchUri=isAndroid ? androidIntent : upiUri;
 
  const d=document.createElement('div');
  d.id='upiPaymentModal';d.className='overlay';
@@ -366,42 +388,82 @@ function openUpiPayment(order){
      <button type="button" class="upi-secondary" id="copyUpi">Copy UPI ID</button>
    </div>
    <button type="button" class="btn gold" id="paidButton" style="width:100%;margin-top:10px">I've completed payment</button>
-   <p style="font-size:10px;color:var(--muted);margin-top:9px">This button only records that you attempted payment. We will verify the payment before marking the order as paid.</p>
+   <p style="font-size:10px;color:var(--muted);margin-top:9px">If the app does not open, use the QR code above. The order remains pending until payment is verified.</p>
  </div>`;
  document.body.appendChild(d);
 
  document.getElementById('closeUpi')?.addEventListener('click',()=>d.remove());
+
  document.getElementById('openUpiApp')?.addEventListener('click',()=>{
-   window.location.href=upiUri;
+   const btn=document.getElementById('openUpiApp');
+   if(btn){btn.disabled=true;btn.textContent='Opening UPI…';}
+
+   // Use a real anchor activation from the user's click. This avoids some
+   // mobile browsers blocking custom URL schemes set through location.href.
+   const a=document.createElement('a');
+   a.href=launchUri;
+   a.target='_self';
+   a.rel='noopener';
+   a.style.display='none';
+   document.body.appendChild(a);
+   a.click();
+   setTimeout(()=>{
+     a.remove();
+     if(btn){btn.disabled=false;btn.textContent='Open UPI App';}
+   },1800);
  });
+
  document.getElementById('copyUpi')?.addEventListener('click',()=>{
-   navigator.clipboard?.writeText(pa).then(()=>toast('UPI ID copied')).catch(()=>toast(pa));
+   const copy=()=>toast('UPI ID copied');
+   if(navigator.clipboard?.writeText){
+     navigator.clipboard.writeText(pa).then(copy).catch(()=>toast(pa));
+   }else{
+     toast(pa);
+   }
  });
- document.getElementById('paidButton')?.addEventListener('click',()=>{
+
+ document.getElementById('paidButton')?.addEventListener('click',async()=>{
    order.status='Payment Pending — verify UPI credit';
    order.paymentStatus='pending';
-   orders.unshift(order);
-   saveCommerce();
-   d.remove();
-   document.getElementById('modal')?.remove();
-   showUpiPendingConfirmation(order);
-   sendOwnerEmail(order);
-   cart={};persist();
+   const btn=document.getElementById('paidButton');
+   if(btn){btn.disabled=true;btn.textContent='Recording order…'}
+   try{
+     const cloud=await saveOrderToCloud(order);
+     order.cloudId=cloud.id;
+     orders.unshift(cloud);
+     d.remove();
+     document.getElementById('modal')?.remove();
+     showUpiPendingConfirmation(order);
+     sendOwnerEmail(order);
+     cart={};
+     persist();
+   }catch(e){
+     console.error(e);
+     if(btn){btn.disabled=false;btn.textContent="I've completed payment"}
+     toast('Could not record the order. Please try again.');
+   }
  });
 
  const makeQr=()=>{
    if(window.QRCode){
-     document.getElementById('upiQr').innerHTML='';
-     new QRCode(document.getElementById('upiQr'),{
-       text:upiUri,width:226,height:226,colorDark:'#111',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M
+     const qr=document.getElementById('upiQr');
+     if(!qr)return;
+     qr.innerHTML='';
+     new QRCode(qr,{
+       text:upiUri,
+       width:226,
+       height:226,
+       colorDark:'#111',
+       colorLight:'#ffffff',
+       correctLevel:QRCode.CorrectLevel.M
      });
    }else{
-     document.getElementById('upiQr').innerHTML='<p style="font-size:12px;color:#777;padding:20px">QR unavailable. Use the UPI ID shown below.</p>';
+     const qr=document.getElementById('upiQr');
+     if(qr)qr.innerHTML='<p style="font-size:12px;color:#777;padding:20px">QR unavailable. Use the UPI ID shown below.</p>';
    }
  };
  if(window.QRCode) makeQr(); else setTimeout(makeQr,800);
 }
-
 function showUpiPendingConfirmation(order){
  const d=document.createElement('div');d.id='modal';d.className='overlay';
  d.innerHTML=`<div class="modal" style="text-align:center">
@@ -556,88 +618,20 @@ function searchProducts(){window.lastSearch=document.getElementById('search').va
 function admin(){document.getElementById('modal')?.remove();let d=document.createElement('div');d.id='modal';d.className='overlay';d.innerHTML=`<div class="modal admin"><button class="close" onclick="this.closest('.overlay').remove()">×</button><div class="eyebrow dark">PRIVATE SELLER AREA</div><h2>Prime Panache Admin</h2><p>Demo admin access. Product edits are saved in this browser using localStorage. In the production deployment, this same screen should be protected with Supabase authentication and database permissions.</p><label style="display:block;color:var(--muted);font-size:12px">Admin password<input id="adminpass" type="password" style="display:block;width:100%;padding:12px;border:1px solid var(--line);border-radius:9px;margin-top:6px"></label><button class="checkout" style="background:var(--ink);color:#fff;border:0;border-radius:12px;padding:13px;width:100%;margin-top:14px" onclick="loginAdmin()">Sign in</button></div>`;document.body.appendChild(d)}
 function loginAdmin(){if(document.getElementById('adminpass').value!=='primepanache'){toast('Incorrect password');return}renderAdmin()}
 function renderAdmin(){
- let m=document.querySelector('#modal .admin');
- if(!m){const d=document.createElement('div');d.id='modal';d.className='overlay';d.innerHTML='<div class="modal admin"></div>';document.body.appendChild(d);m=d.querySelector('.admin');}
- m.innerHTML=`<button class="close" onclick="this.closest('.overlay').remove()">×</button><div class="eyebrow dark">PRIVATE SELLER AREA</div><h2>Prime Panache Admin</h2><p>Manage products, support details, promo codes and incoming order requests.</p>
- <div class="admin-settings"><b>Customer support details</b><label style="display:block;font-size:11px;color:var(--muted);margin-top:9px">Support email<input id="supportEmail" value="${esc(storeSettings.email)}"></label><label style="display:block;font-size:11px;color:var(--muted)">Contact number<input id="supportPhone" value="${esc(storeSettings.phone)}"></label><button class="btn gold" onclick="saveStoreSettings()">Save support details</button></div>
+ let m=document.querySelector('#modal .admin');if(!m){const d=document.createElement('div');d.id='modal';d.className='overlay';d.innerHTML='<div class="modal admin"></div>';document.body.appendChild(d);m=d.querySelector('.admin')}
+ m.innerHTML=`<button class="close" onclick="this.closest('.overlay').remove()">×</button><div class="eyebrow dark">PRIVATE SELLER AREA</div><h2>Prime Panache Admin</h2><p>Cloud dashboard — products and customer orders are stored in Supabase.</p>
+ <div class="admin-settings"><div style="display:flex;justify-content:space-between;align-items:center"><b>Customer support details</b><span class="status-pill">Cloud saved</span></div><label style="display:block;font-size:11px;color:var(--muted);margin-top:9px">Support email<input id="supportEmail" value="${esc(storeSettings.email)}"></label><label style="display:block;font-size:11px;color:var(--muted)">Contact number<input id="supportPhone" value="${esc(storeSettings.phone)}"></label><button class="btn gold" onclick="saveStoreSettings()">Save support details</button></div>
  <div class="admin-settings"><b>Checkout settings</b><label style="display:block;font-size:11px;color:var(--muted);margin-top:9px">Delivery fee<input id="deliveryFeeAdmin" type="number" min="0" value="${deliveryFee}"></label><button class="btn gold" onclick="saveDeliveryFee()">Save delivery fee</button></div>
  <div class="admin-settings"><b>Promo codes</b><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px">${promoCodes.map((p,i)=>`<div class="order-admin-card"><b>${esc(p.code)}</b><p>${p.type==='percent'?p.value+'%':'₹'+p.value} off · Min ${money(p.minOrder||0)} · Exp ${esc(p.expiry||'No expiry')} · ${p.active?'Active':'Disabled'}</p><button onclick="editPromo(${i})">Edit</button> <button onclick="togglePromo(${i})">${p.active?'Disable':'Enable'}</button></div>`).join('')}</div><button class="btn gold" onclick="editPromo(null)">+ Add promo code</button></div>
- <div class="admin-settings"><b>Orders (${orders.length})</b>${orders.length?orders.map(o=>`<div class="order-admin-card"><div class="order-admin-head"><b>${esc(o.id)}</b><span class="status-pill">${esc(o.status)}</span></div><p><b>${esc(o.name)}</b> · ${esc(o.phone)} · ${esc(o.email)}<br>${esc(o.address)}, ${esc(o.city)}, ${esc(o.state)} - ${esc(o.pin)}<br>Total: <b>${money(o.total)}</b> · Promo: ${esc(o.promoCode||'None')} · Email: ${esc(o.emailStatus||'unknown')}</p><select onchange="updateOrderStatus('${o.id}',this.value)"><option ${o.status==='New'?'selected':''}>New</option><option ${o.status==='Confirmed'?'selected':''}>Confirmed</option><option ${o.status==='Packed'?'selected':''}>Packed</option><option ${o.status==='Shipped'?'selected':''}>Shipped</option><option ${o.status==='Delivered'?'selected':''}>Delivered</option><option ${o.status==='Cancelled'?'selected':''}>Cancelled</option></select></div>`).join(''):'<p>No orders yet.</p>'}</div>
+ <div class="admin-settings"><div style="display:flex;justify-content:space-between;align-items:end;gap:12px;flex-wrap:wrap"><div><div class="eyebrow dark">CUSTOMER ORDERS</div><h3 style="margin:4px 0">All orders (${orders.length})</h3><p style="margin:0;color:var(--muted);font-size:12px">Customer, shipping, products, quantities, pricing, payment and status.</p></div><button class="btn outline" style="color:var(--ink);border-color:var(--line)" onclick="loadAdminCloud().then(renderAdmin)">↻ Refresh</button></div><div class="orders-admin-list">${orders.length?orders.map(orderAdminCard).join(''):'<div class="wishlist-empty"><div style="font-size:36px">📦</div><h3>No customer orders yet</h3><p>Orders will appear here after a customer submits their UPI payment request.</p></div>'}</div></div>
  <div class="adminbar"><button class="btn gold" onclick="editProduct(null)">+ Add product</button><button class="btn outline" style="color:var(--ink);border-color:var(--line)" onclick="resetCatalog()">Reset demo data</button></div><div>${products.map(p=>`<div class="adminrow"><img src="${p.image}"><div><b>${esc(p.name)}</b><small>${esc(p.category)} · ${money(p.price)} · Stock ${p.stock}</small></div><button onclick="editProduct('${p.id}')">Edit</button><button onclick="deleteProduct('${p.id}')">Delete</button></div>`).join('')}</div>`;
 }
-function saveDeliveryFee(){const v=Number(document.getElementById('deliveryFeeAdmin').value);if(!Number.isFinite(v)||v<0){toast('Enter a valid delivery fee');return}deliveryFee=v;saveCommerce();toast('Delivery fee saved');renderAdmin()}
-function updateOrderStatus(id,status){const o=orders.find(x=>x.id===id);if(o){o.status=status;saveCommerce();toast('Order status updated');renderAdmin()}}
-function togglePromo(i){promoCodes[i].active=!promoCodes[i].active;saveCommerce();renderAdmin()}
-function editPromo(i){
- const p=i===null?{code:'NEW10',type:'percent',value:10,minOrder:0,maxDiscount:0,expiry:'2026-12-31',active:true}:promoCodes[i];
- const m=document.querySelector('#modal .admin');
- m.innerHTML=`<button class="close" onclick="renderAdmin()">×</button><div class="eyebrow dark">PROMO CODE</div><h2>${i===null?'Add':'Edit'} promo</h2><div class="form"><div class="formgrid"><label>Code<input id="pc_code" value="${esc(p.code)}"></label><label>Type<select id="pc_type"><option value="percent" ${p.type==='percent'?'selected':''}>Percentage</option><option value="fixed" ${p.type==='fixed'?'selected':''}>Fixed amount</option></select></label><label>Discount value<input id="pc_value" type="number" value="${p.value}"></label><label>Minimum order<input id="pc_min" type="number" value="${p.minOrder||0}"></label><label>Maximum discount (percentage)<input id="pc_max" type="number" value="${p.maxDiscount||0}"></label><label>Expiry date<input id="pc_expiry" type="date" value="${esc(p.expiry||'')}"></label><label><input id="pc_active" type="checkbox" ${p.active?'checked':''}> Active</label></div><div class="formactions"><button class="btn outline" style="color:var(--ink);border-color:var(--line)" onclick="renderAdmin()">Cancel</button><button class="btn gold" onclick="savePromo(${i===null?'null':i})">Save promo</button></div></div>`;
-}
-function savePromo(i){const p={code:document.getElementById('pc_code').value.trim().toUpperCase(),type:document.getElementById('pc_type').value,value:Number(document.getElementById('pc_value').value),minOrder:Number(document.getElementById('pc_min').value||0),maxDiscount:Number(document.getElementById('pc_max').value||0),expiry:document.getElementById('pc_expiry').value,active:document.getElementById('pc_active').checked};if(!p.code||p.value<=0){toast('Enter a valid promo');return}if(i===null)promoCodes.push(p);else promoCodes[i]=p;saveCommerce();toast('Promo code saved');renderAdmin()}
-function saveStoreSettings(){const email=document.getElementById('supportEmail').value.trim(),phone=document.getElementById('supportPhone').value.trim();if(!email||!phone){toast('Enter both support email and contact number');return}storeSettings={email,phone};localStorage.setItem('pp_store_settings',JSON.stringify(storeSettings));toast('Support details saved');renderAdmin()}
-function editProduct(id){let p=id?products.find(x=>x.id===id):{id:'PP'+Date.now(),name:'New Product',category:'Lifestyle & Utility',price:0,mrp:0,rating:5,reviews:0,stock:0,badge:'New',image:products[0].image,images:[products[0].image],short:'',about:['','','','',''],details:{'Product Dimensions':'','Colour':'','Brand':'PrimePanache','Size':'','Style':'','Item Weight':''},accordions:{'Style':'','Measurements':'','Materials & Care':'','User guide':''}};let m=document.querySelector('#modal .admin');m.innerHTML=`<button class="close" onclick="renderAdmin()">×</button><div class="eyebrow dark">EDIT CATALOGUE</div><h2>${id?'Edit product':'Add product'}</h2><div class="form"><div class="formgrid">
-<label>Product name<input id="f_name" value="${esc(p.name)}"></label><label>Category<input id="f_category" value="${esc(p.category)}"></label><label>Price<input id="f_price" type="number" value="${p.price}"></label><label>MRP<input id="f_mrp" type="number" value="${p.mrp}"></label><label>Stock<input id="f_stock" type="number" value="${p.stock}"></label><label>Badge<input id="f_badge" value="${esc(p.badge)}"></label><label class="full">Short description<input id="f_short" value="${esc(p.short)}"></label>
-<label class="full">Product images — upload multiple images from your PC
-<input id="f_files" class="file-input" type="file" accept="image/*" multiple onchange="previewUploads(this)">
-<div id="uploadPreviewList" class="upload-preview">${(p.images&&p.images.length?p.images:[p.image]).map(im=>`<img src="${im}">`).join('')}</div>
-<span class="upload-note">Select multiple JPG, PNG or WebP images. The first image is the main image; customers can slide through the gallery.</span>
-<input id="f_image" type="hidden" value="${esc(p.image)}"><input id="f_images" type="hidden" value="${esc(JSON.stringify(p.images&&p.images.length?p.images:[p.image]))}"></label>
-<label class="full">Or paste a single image URL<input id="f_image_url" value=""></label>
-<label class="full">About this item — one bullet per line<textarea id="f_about">${esc(p.about.join('\\n'))}</textarea></label>
-<label>Product Dimensions<input id="d_dim" value="${esc(p.details['Product Dimensions'])}"></label><label>Colour<input id="d_colour" value="${esc(p.details['Colour'])}"></label><label>Brand<input id="d_brand" value="${esc(p.details['Brand'])}"></label><label>Size<input id="d_size" value="${esc(p.details['Size'])}"></label><label>Style<input id="d_style" value="${esc(p.details['Style'])}"></label><label>Item Weight<input id="d_weight" value="${esc(p.details['Item Weight'])}"></label>
-<label class="full">Style details<textarea id="a_style">${esc(p.accordions['Style'])}</textarea></label><label class="full">Measurements<textarea id="a_measure">${esc(p.accordions['Measurements'])}</textarea></label><label class="full">Materials & Care<textarea id="a_care">${esc(p.accordions['Materials & Care'])}</textarea></label><label class="full">User guide<textarea id="a_guide">${esc(p.accordions['User guide'])}</textarea></label></div>
-<div class="formactions"><button class="btn outline" style="color:var(--ink);border-color:var(--line)" onclick="renderAdmin()">Cancel</button><button class="btn gold" class="admin-save" onclick="saveEdited('${p.id}');this.classList.add('saved')">Save product</button></div></div>`}
-
-function previewUploads(input){
- const files=[...(input.files||[])], preview=document.getElementById('uploadPreviewList');
- if(!files.length||!preview)return;
- if(files.some(f=>f.size>4*1024*1024)){toast('Each image must be under 4 MB');input.value='';return}
- let done=0,arr=[];
- files.forEach(file=>{const reader=new FileReader();reader.onload=e=>{arr.push(e.target.result);done++;if(done===files.length){document.getElementById('f_images').value=JSON.stringify(arr);document.getElementById('f_image').value=arr[0];preview.innerHTML=arr.map(x=>`<img src="${x}">`).join('')}};reader.readAsDataURL(file)})
-}
-
-function val(id){return document.getElementById(id).value}
-function saveEdited(id){let p={id,name:val('f_name'),category:val('f_category'),price:+val('f_price'),mrp:+val('f_mrp'),stock:+val('f_stock'),badge:val('f_badge'),short:val('f_short'),image:(val('f_image_url').trim()||val('f_image')),images:(()=>{try{return JSON.parse(val('f_images'))}catch(e){return [val('f_image')]}})(),rating:5,reviews:0,about:val('f_about').split('\\n').filter(Boolean),details:{'Product Dimensions':val('d_dim'),'Colour':val('d_colour'),'Brand':val('d_brand'),'Size':val('d_size'),'Style':val('d_style'),'Item Weight':val('d_weight')},accordions:{'Style':val('a_style'),'Measurements':val('a_measure'),'Materials & Care':val('a_care'),'User guide':val('a_guide')}};let i=products.findIndex(x=>x.id===id);if(i>=0){p.rating=products[i].rating;p.reviews=products[i].reviews;products[i]=p}else products.unshift(p);persist();toast('Product saved');renderAdmin()}
-function deleteProduct(id){if(!confirm('Delete this product?'))return;products=products.filter(p=>p.id!==id);persist();renderAdmin()}
-function resetCatalog(){if(!confirm('Reset the catalogue to the original demo data?'))return;products=SEED.map(p=>({...p,images:p.images&&p.images.length?p.images:[p.image],details:{...p.details},accordions:{...p.accordions},about:[...p.about]}));persist();renderAdmin()}
-function toast(t){let x=document.createElement('div');x.className='toast';x.textContent=t;document.body.appendChild(x);setTimeout(()=>x.remove(),2200)}
-/* ===== PRIME PANACHE CLOUD MODE (Supabase) ===== */
-let cloudReady=false,adminSession=null;
-async function isAdmin(){const {data:{user}}=await sb.auth.getUser();if(!user)return false;const {data,error}=await sb.from('admin_users').select('user_id').eq('user_id',user.id).maybeSingle();return !error&&!!data}
-function cloudProduct(row,imgs){const arr=(imgs||[]).sort((a,b)=>a.sort_order-b.sort_order).map(x=>x.image_url);return {id:row.id,name:row.name,category:row.category,short:row.short_description||'',price:Number(row.price),mrp:Number(row.mrp),stock:Number(row.stock),badge:row.badge||'',rating:Number(row.rating||0),reviews:Number(row.review_count||0),image:arr[0]||'',images:arr.length?arr:[''],about:Array.isArray(row.about_items)?row.about_items:[],details:row.product_details||{},accordions:row.accordion_details||{}}}
-async function loadCloudData(){try{const {data:prods,error:pe}=await sb.from('products').select('*').eq('active',true).order('created_at');if(pe)throw pe;const ids=(prods||[]).map(p=>p.id);let imgs=[];if(ids.length){const r=await sb.from('product_images').select('*').in('product_id',ids).order('sort_order');if(r.error)throw r.error;imgs=r.data||[]}products=(prods||[]).map(p=>cloudProduct(p,imgs.filter(i=>i.product_id===p.id)));if(!products.length)products=SEED.map(p=>({...p,images:p.images&&p.images.length?p.images:[p.image]}));const sr=await sb.from('store_settings').select('*').eq('id',1).maybeSingle();if(!sr.error&&sr.data){storeSettings={email:sr.data.support_email||STORE_DEFAULTS.email,phone:sr.data.support_phone||STORE_DEFAULTS.phone};deliveryFee=Number(sr.data.delivery_fee||40)}const pr=await sb.from('promocodes').select('*').eq('active',true);if(!pr.error&&pr.data)promoCodes=pr.data.map(x=>({id:x.id,code:x.code,type:x.discount_type==='percentage'?'percent':'fixed',value:Number(x.discount_value),minOrder:Number(x.min_order_value||0),maxDiscount:Number(x.max_discount||0),expiry:x.expires_at?x.expires_at.slice(0,10):'',active:x.active}));const rr=await sb.from('reviews').select('*').eq('approved',true).order('created_at',{ascending:false});if(!rr.error){reviews={};(rr.data||[]).forEach(r=>{(reviews[r.product_id] ||= []).push({name:r.customer_name,rating:r.rating,text:r.review_text,date:new Date(r.created_at).toLocaleDateString('en-IN')})})}cloudReady=true;renderHome()}catch(e){console.error(e);cloudReady=false;renderHome();toast('Cloud connection unavailable — showing the demo catalogue.')}}
-async function initCloud(){document.getElementById('app').innerHTML='<div style="min-height:60vh;display:grid;place-items:center;font-family:Arial;color:#706c64">Loading Prime Panache…</div>';await loadCloudData();if(location.pathname==='/admin'){await admin();return}const pid=new URLSearchParams(location.search).get('product');if(pid&&products.some(p=>p.id===pid))openProduct(pid,false)}
-async function syncSeedToCloud(){const {count,error}=await sb.from('products').select('*',{count:'exact',head:true});if(error||count>0)return;for(const p of SEED){const ins=await sb.from('products').insert({name:p.name,category:p.category,short_description:p.short||'',price:p.price,mrp:p.mrp,stock:p.stock,badge:p.badge||'',rating:p.rating||0,review_count:p.reviews||0,about_items:p.about||[],product_details:p.details||{},accordion_details:p.accordions||{},active:true}).select().single();if(ins.error)continue;const urls=p.images&&p.images.length?p.images:[p.image];for(let i=0;i<urls.length;i++){try{const blob=await(await fetch(urls[i])).blob();const ext=(blob.type||'image/jpeg').split('/')[1]||'jpg';const path=`${ins.data.id}/${Date.now()}-${i}.${ext}`;const up=await sb.storage.from('product-images').upload(path,blob,{contentType:blob.type||'image/jpeg',upsert:true});if(!up.error){const pub=sb.storage.from('product-images').getPublicUrl(path).data.publicUrl;await sb.from('product_images').insert({product_id:ins.data.id,image_url:pub,sort_order:i})}}catch(e){console.warn(e)}}}await loadCloudData()}
-async function requireAdmin(){const ok=await isAdmin();if(!ok)toast('Please sign in as the Prime Panache admin');return ok}
-async function admin(){document.getElementById('modal')?.remove();const sessionOk=await isAdmin();if(sessionOk){await loadAdminCloud();renderAdmin();return;}const d=document.createElement('div');d.id='modal';d.className='overlay';d.innerHTML=`<div class="modal admin"><button class="close" onclick="this.closest('.overlay').remove()">×</button><div class="eyebrow dark">PRIVATE SELLER AREA</div><h2>Prime Panache Admin</h2><p>Sign in with your Supabase Admin account. Catalogue changes are stored in the cloud.</p><label style="display:block;color:var(--muted);font-size:12px">Admin email<input id="adminemail" type="email" autocomplete="username" placeholder="Your admin Gmail" style="display:block;width:100%;padding:12px;border:1px solid var(--line);border-radius:9px;margin-top:6px"></label><label style="display:block;color:var(--muted);font-size:12px;margin-top:10px">Password<input id="adminpass" type="password" autocomplete="current-password" style="display:block;width:100%;padding:12px;border:1px solid var(--line);border-radius:9px;margin-top:6px"></label><button class="checkout" style="background:var(--ink);color:#fff;border:0;border-radius:12px;padding:13px;width:100%;margin-top:14px" onclick="loginAdmin()">Sign in</button></div>`;document.body.appendChild(d)}
-async function loginAdmin(){
-  const email=document.getElementById('adminemail')?.value.trim();
-  const pass=document.getElementById('adminpass')?.value;
-  if(!email||!pass){toast('Enter your admin email and password');return}
-  const button=document.querySelector('#modal .admin .checkout');
-  if(button){button.disabled=true;button.textContent='Signing in…'}
-  const {data,error}=await sb.auth.signInWithPassword({email,password:pass});
-  if(error){
-    if(button){button.disabled=false;button.textContent='Sign in'}
-    toast(error.message||'Unable to sign in');return
-  }
-  if(!(await isAdmin())){
-    await sb.auth.signOut();
-    if(button){button.disabled=false;button.textContent='Sign in'}
-    toast('This account is not an authorized Prime Panache admin');return
-  }
-  adminSession=data.session;
-  await syncSeedToCloud();
-  await loadAdminCloud();
-  renderAdmin();
-  toast('Admin signed in');
-}
-async function loadAdminCloud(){const {data:prods,error:pe}=await sb.from('products').select('*').order('created_at');if(!pe){const ids=(prods||[]).map(p=>p.id);let imgs=[];if(ids.length){const r=await sb.from('product_images').select('*').in('product_id',ids).order('sort_order');imgs=r.data||[]}products=(prods||[]).map(p=>cloudProduct(p,imgs.filter(i=>i.product_id===p.id)))}const pr=await sb.from('promocodes').select('*').order('created_at',{ascending:false});if(!pr.error)promoCodes=pr.data.map(x=>({id:x.id,code:x.code,type:x.discount_type==='percentage'?'percent':'fixed',value:Number(x.discount_value),minOrder:Number(x.min_order_value||0),maxDiscount:Number(x.max_discount||0),expiry:x.expires_at?x.expires_at.slice(0,10):'',active:x.active}));const sr=await sb.from('store_settings').select('*').eq('id',1).maybeSingle();if(!sr.error&&sr.data){storeSettings={email:sr.data.support_email||'',phone:sr.data.support_phone||''};deliveryFee=Number(sr.data.delivery_fee||0)}const or=await sb.from('orders').select('*').order('created_at',{ascending:false});if(!or.error)orders=(or.data||[]).map(o=>({id:o.order_number,name:o.customer_name,email:o.customer_email,phone:o.customer_phone,address:o.shipping_address?.address||'',city:o.shipping_address?.city||'',state:o.shipping_address?.state||'',pin:o.shipping_address?.pin||'',total:Number(o.total),promoCode:o.promo_code||'',status:(o.order_status||'new').replace(/^./,c=>c.toUpperCase()),emailStatus:o.email_status||'pending'}))}
 async function saveDeliveryFee(){if(!(await requireAdmin()))return;const v=Number(document.getElementById('deliveryFeeAdmin').value);if(!Number.isFinite(v)||v<0){toast('Enter a valid delivery fee');return}const {error}=await sb.from('store_settings').upsert({id:1,delivery_fee:v,support_email:storeSettings.email,support_phone:storeSettings.phone});if(error){toast(error.message);return}deliveryFee=v;toast('Delivery fee saved');renderAdmin()}
 async function saveStoreSettings(){if(!(await requireAdmin()))return;const email=document.getElementById('supportEmail').value.trim(),phone=document.getElementById('supportPhone').value.trim();if(!email||!phone){toast('Enter both support email and contact number');return}const {error}=await sb.from('store_settings').upsert({id:1,delivery_fee:deliveryFee,support_email:email,support_phone:phone});if(error){toast(error.message);return}storeSettings={email,phone};toast('Support details saved');renderAdmin()}
 async function savePromo(i){if(!(await requireAdmin()))return;const p={code:document.getElementById('pc_code').value.trim().toUpperCase(),type:document.getElementById('pc_type').value,value:Number(document.getElementById('pc_value').value),minOrder:Number(document.getElementById('pc_min').value||0),maxDiscount:Number(document.getElementById('pc_max').value||0),expiry:document.getElementById('pc_expiry').value,active:document.getElementById('pc_active').checked};if(!p.code||p.value<=0){toast('Enter a valid promo');return}const row={code:p.code,discount_type:p.type==='percent'?'percentage':'fixed',discount_value:p.value,min_order_value:p.minOrder,max_discount:p.maxDiscount||null,expires_at:p.expiry?p.expiry+'T23:59:59+05:30':null,active:p.active};const r=i===null?await sb.from('promocodes').insert(row):await sb.from('promocodes').update(row).eq('id',promoCodes[i].id);if(r.error){toast(r.error.message);return}await loadAdminCloud();toast('Promo code saved');renderAdmin()}
 async function togglePromo(i){if(!(await requireAdmin()))return;const {error}=await sb.from('promocodes').update({active:!promoCodes[i].active}).eq('id',promoCodes[i].id);if(error){toast(error.message);return}await loadAdminCloud();renderAdmin()}
-async function updateOrderStatus(id,status){if(!(await requireAdmin()))return;const map={New:'new',Confirmed:'confirmed',Packed:'packed',Shipped:'shipped',Delivered:'delivered',Cancelled:'cancelled'};const {error}=await sb.from('orders').update({order_status:map[status]||status.toLowerCase()}).eq('order_number',id);if(error){toast(error.message);return}await loadAdminCloud();toast('Order status updated');renderAdmin()}
+async function updateOrderStatus(id,status){if(!(await requireAdmin()))return;const map={New:'new',Confirmed:'confirmed',Packed:'packed',Shipped:'shipped',Delivered:'delivered',Cancelled:'cancelled'};const {error}=await sb.from('orders').update({order_status:map[status]||String(status).toLowerCase()}).eq('order_number',id);if(error){toast(error.message);return}await loadAdminCloud();toast('Order status updated');renderAdmin()};const {error}=await sb.from('orders').update({order_status:map[status]||status.toLowerCase()}).eq('order_number',id);if(error){toast(error.message);return}await loadAdminCloud();toast('Order status updated');renderAdmin()}
+async function updatePaymentStatus(id,status){if(!(await requireAdmin()))return;const {error}=await sb.from('orders').update({payment_status:status}).eq('order_number',id);if(error){toast(error.message);return}await loadAdminCloud();toast('Payment status updated');renderAdmin()}
 async function saveEdited(id){if(!(await requireAdmin()))return;const existing=products.find(x=>x.id===id);const p={id,name:val('f_name'),category:val('f_category'),price:+val('f_price'),mrp:+val('f_mrp'),stock:+val('f_stock'),badge:val('f_badge'),short:val('f_short'),image:(val('f_image_url').trim()||val('f_image')),images:(()=>{try{return JSON.parse(val('f_images'))}catch(e){return [val('f_image')]}})(),rating:existing?.rating||5,reviews:existing?.reviews||0,about:val('f_about').split('\\n').filter(Boolean),details:{'Product Dimensions':val('d_dim'),'Colour':val('d_colour'),'Brand':val('d_brand'),'Size':val('d_size'),'Style':val('d_style'),'Item Weight':val('d_weight')},accordions:{'Style':val('a_style'),'Measurements':val('a_measure'),'Materials & Care':val('a_care'),'User guide':val('a_guide')}};const row={name:p.name,category:p.category,short_description:p.short,price:p.price,mrp:p.mrp,stock:p.stock,badge:p.badge,rating:p.rating,review_count:p.reviews,about_items:p.about,product_details:p.details,accordion_details:p.accordions,active:true};const r=id&&id.length>20?await sb.from('products').update(row).eq('id',id).select().single():await sb.from('products').insert(row).select().single();if(r.error){toast(r.error.message);return}const pid=r.data.id;await sb.from('product_images').delete().eq('product_id',pid);const imgs=p.images&&p.images.length?p.images:[p.image];for(let i=0;i<imgs.length;i++){let src=imgs[i];if(!src)continue;try{if(src.startsWith('data:')){const blob=await(await fetch(src)).blob();const ext=(blob.type||'image/jpeg').split('/')[1]||'jpg';const path=`${pid}/${Date.now()}-${i}.${ext}`;const up=await sb.storage.from('product-images').upload(path,blob,{contentType:blob.type||'image/jpeg',upsert:true});if(!up.error)src=sb.storage.from('product-images').getPublicUrl(path).data.publicUrl}await sb.from('product_images').insert({product_id:pid,image_url:src,sort_order:i})}catch(e){console.warn(e)}}await loadAdminCloud();toast('Product saved to cloud');renderAdmin()}
 async function deleteProduct(id){if(!(await requireAdmin()))return;if(!confirm('Delete this product?'))return;const {error}=await sb.from('products').delete().eq('id',id);if(error){toast(error.message);return}await loadAdminCloud();renderAdmin();toast('Product deleted')}
 async function resetCatalog(){if(!(await requireAdmin()))return;if(!confirm('Import the original demo catalogue into the cloud? Existing cloud products are not deleted.'))return;await syncSeedToCloud();await loadAdminCloud();renderAdmin();toast('Demo catalogue synced to cloud')}
