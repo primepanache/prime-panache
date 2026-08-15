@@ -513,11 +513,30 @@ function buyNow(id){
   persist();
   checkoutForm();
 }
-function card(p){let off=p.mrp?Math.round((1-p.price/p.mrp)*100):0;return `<article class="card"><div class="cardimg"><img src="${p.image}"><span class="badge">${esc(p.badge)}</span><button class="wish action-btn" aria-label="Save ${esc(p.name)}" onclick="toggleWish('${p.id}');animateCardButton('${p.id}','wish')">${wish.includes(p.id)?'♥':'♡'}</button></div><div class="cardbody"><div class="cat">${esc(p.category)}</div><h3>${esc(p.name)}</h3><div class="rating">★ ${p.rating} <span>(${p.reviews||0})</span></div><div class="price">${money(p.price)} <del>${money(p.mrp)}</del><span class="off">${off}% off</span></div><div class="actions"><button onclick="openProduct('${p.id}')">View details</button><button class="dark action-btn" onclick="add('${p.id}');animateCardButton('${p.id}','cart')">Add to bag</button></div></div></article>`}
+function card(p){
+  let off=p.mrp?Math.round((1-p.price/p.mrp)*100):0;
+  return `<article class="card" data-product-card="${esc(p.id)}">
+    <div class="cardimg">
+      <img src="${esc(p.image)}" alt="${esc(p.name)}">
+      <span class="badge">${esc(p.badge)}</span>
+      <button class="wish action-btn" type="button" data-wish-id="${esc(p.id)}" aria-label="Save ${esc(p.name)}">${wish.includes(p.id)?'♥':'♡'}</button>
+    </div>
+    <div class="cardbody">
+      <div class="cat">${esc(p.category)}</div>
+      <h3>${esc(p.name)}</h3>
+      <div class="rating">★ ${p.rating} <span>(${p.reviews||0})</span></div>
+      <div class="price">${money(p.price)} <del>${money(p.mrp)}</del><span class="off">${off}% off</span></div>
+      <div class="actions">
+        <button type="button" data-open-product="${esc(p.id)}">View details</button>
+        <button type="button" class="dark action-btn" data-add-product="${esc(p.id)}">Add to bag</button>
+      </div>
+    </div>
+  </article>`;
+}
 function openProduct(id,push=true){let p=products.find(x=>x.id===id);if(!p){toast('Product not found');return}current=id;if(push)history.pushState({product:id},'',productUrl(id));document.getElementById('app').innerHTML=header()+productPage(p)+footer();scrollTo(0,0)}
 function productPage(p){
 return `<main class="page"><div class="breadcrumb"><a href="#" onclick="goHome();return false">Home</a> / ${esc(p.category)} / ${esc(p.name)}</div>
-<div class="product-page"><div class="gallery-wrap"><div class="thumbs">${(p.images&&p.images.length?p.images:[p.image]).map((im,i)=>`<button class="thumb ${i===0?'active':''}" onclick="setGallery(${i},'${p.id}')"><img src="${im}"></button>`).join('')}</div><div class="main-gallery"><button class="product-heart ${wish.includes(p.id)?'active':''}" aria-label="Wishlist" onclick="toggleWish('${p.id}')">${wish.includes(p.id)?'♥':'♡'}</button><button class="slide-arrow left onclick="slideGallery(-1,'${p.id}')">‹</button><img id="mainProductImage" src="${(p.images&&p.images.length?p.images:[p.image])[0]}" alt="${esc(p.name)}"><button class="slide-arrow right" onclick="slideGallery(1,'${p.id}')">›</button><span class="slide-count" id="slideCount">1 / ${(p.images&&p.images.length?p.images.length:1)}</span></div></div><div class="product-info"><div class="cat">${esc(p.category)}</div><h1>${esc(p.name)}</h1><div class="rating">★ ${p.rating} <span>(${p.reviews||0} customer reviews)</span></div><div class="product-price">${money(p.price)} <del>${money(p.mrp)}</del></div><p class="lead">${esc(p.short)}</p><div class="${p.stock<=3?'stock low':'stock'}">${p.stock<=3?'Only '+p.stock+' left in stock':'In stock · Ready to dispatch'}</div><div class="quantity"><button onclick="quantityChange('${p.id}',-1)">−</button><input id="qtyInput" type="number" min="1" max="${p.stock}" value="1" oninput="this.value=Math.max(1,Math.min(${p.stock},parseInt(this.value||1)))"><button onclick="quantityChange('${p.id}',1)">+</button></div><div class="buyrow"><button class="buy action-btn" onclick="addQuantity('${p.id}')">🛍 Add to bag</button><button class="buy buy-now action-btn" onclick="buyNow('${p.id}')">✦ Buy Now</button></div><button class="share-product" onclick="copyProductLink('${p.id}')">↗ Share product</button>
+<div class="product-page"><div class="gallery-wrap"><div class="thumbs">${(p.images&&p.images.length?p.images:[p.image]).map((im,i)=>`<button class="thumb ${i===0?'active':''}" onclick="setGallery(${i},'${p.id}')"><img src="${im}"></button>`).join('')}</div><div class="main-gallery"><button type="button" class="product-heart ${wish.includes(p.id)?'active':''}" aria-label="Wishlist" data-wish-id="${p.id}">${wish.includes(p.id)?'♥':'♡'}</button><button type="button" class="slide-arrow left" data-slide-gallery="-1" data-slide-product="${p.id}">‹</button><img id="mainProductImage" src="${(p.images&&p.images.length?p.images:[p.image])[0]}" alt="${esc(p.name)}"><button type="button" class="slide-arrow right" data-slide-gallery="1" data-slide-product="${p.id}">›</button><span class="slide-count" id="slideCount">1 / ${(p.images&&p.images.length?p.images.length:1)}</span></div></div><div class="product-info"><div class="cat">${esc(p.category)}</div><h1>${esc(p.name)}</h1><div class="rating">★ ${p.rating} <span>(${p.reviews||0} customer reviews)</span></div><div class="product-price">${money(p.price)} <del>${money(p.mrp)}</del></div><p class="lead">${esc(p.short)}</p><div class="${p.stock<=3?'stock low':'stock'}">${p.stock<=3?'Only '+p.stock+' left in stock':'In stock · Ready to dispatch'}</div><div class="quantity"><button onclick="quantityChange('${p.id}',-1)">−</button><input id="qtyInput" type="number" min="1" max="${p.stock}" value="1" oninput="this.value=Math.max(1,Math.min(${p.stock},parseInt(this.value||1)))"><button onclick="quantityChange('${p.id}',1)">+</button></div><div class="buyrow"><button type="button" class="buy action-btn" data-add-quantity="${p.id}">🛍 Add to bag</button><button type="button" class="buy buy-now action-btn" data-buy-now="${p.id}">✦ Buy Now</button></div><button class="share-product" onclick="copyProductLink('${p.id}')">↗ Share product</button>
 <div class="delivery-box"><div class="delivery-title"><span class="pin-icon">⌖</span> Check delivery to your PIN code</div><div class="pin-form"><input id="deliveryPin" inputmode="numeric" maxlength="6" placeholder="Enter 6-digit PIN code" oninput="this.value=this.value.replace(/\D/g,'').slice(0,6)" onkeydown="if(event.key==='Enter')checkDelivery(this.value)"><button onclick="checkDelivery(document.getElementById('deliveryPin').value)">Check</button></div><div id="deliveryResult" class="delivery-result">Enter your PIN to see an estimated delivery date.</div></div>
 <div class="detail-title">About this item</div><ul class="about-list">${p.about.map(x=>'<li>'+esc(x)+'</li>').join('')}</ul>
 <div class="detail-title">Product information</div><div class="item-details">${Object.entries(p.details).map(([k,v])=>`<div><b>${esc(k)}</b><span>${esc(v)}</span></div>`).join('')}</div>
@@ -680,7 +699,7 @@ async function loadAdminCloud(){
     sb.from('orders').select('*').order('created_at',{ascending:false}),
     sb.from('store_settings').select('*').eq('id',1).maybeSingle()
   ]);
-  if(pr.data){products=pr.data.map(row=>{const imgs=(im.data||[]).filter(x=>x.product_id===row.id).sort((a,b)=>a.sort_order-b.sort_order).map(x=>x.image_url);return {id:row.id,name:row.name,category:row.category,price:Number(row.price||0),mrp:Number(row.mrp||0),rating:Number(row.rating||0),reviews:Number(row.review_count||0),stock:Number(row.stock||0),badge:row.badge||'',image:imgs[0]||'',images:imgs,short:row.short_description||'',about:row.about_items||[],details:row.product_details||{},accordions:row.accordion_details||{}}});}
+  if(pr.data && pr.data.length){products=pr.data.map(row=>{const imgs=(im.data||[]).filter(x=>x.product_id===row.id).sort((a,b)=>a.sort_order-b.sort_order).map(x=>x.image_url);return {id:row.id,name:row.name,category:row.category,price:Number(row.price||0),mrp:Number(row.mrp||0),rating:Number(row.rating||0),reviews:Number(row.review_count||0),stock:Number(row.stock||0),badge:row.badge||'',image:imgs[0]||'',images:imgs,short:row.short_description||'',about:row.about_items||[],details:row.product_details||{},accordions:row.accordion_details||{}}});}
   promoCodes=(pc.data||[]).map(x=>({id:x.id,code:x.code,type:x.discount_type==='percentage'?'percent':'fixed',value:Number(x.discount_value||0),minOrder:Number(x.min_order_value||0),maxDiscount:Number(x.max_discount||0),expiry:x.expires_at?String(x.expires_at).slice(0,10):'',active:x.active}));
   orders=(or.data||[]).map(x=>({id:x.order_number,name:x.customer_name,email:x.customer_email,phone:x.customer_phone,address:x.shipping_address,items:x.items,subtotal:Number(x.subtotal||0),deliveryFee:Number(x.delivery_fee||0),discount:Number(x.discount||0),promo:x.promo_code||'',total:Number(x.total||0),paymentStatus:x.payment_status||'pending',status:x.order_status||'new',emailStatus:x.email_status||'pending',createdAt:x.created_at,cloudId:x.id}));
   if(st.data){deliveryFee=Number(st.data.delivery_fee??40);storeSettings={email:st.data.support_email||STORE_DEFAULTS.email,phone:st.data.support_phone||STORE_DEFAULTS.phone};}
@@ -695,6 +714,34 @@ async function syncSeedToCloud(){
     if(pid&&p.images?.length){await sb.from('product_images').delete().eq('product_id',pid);for(let i=0;i<p.images.length;i++)await sb.from('product_images').insert({product_id:pid,image_url:p.images[i],sort_order:i});}
   }
 }
+
+// Robust interaction delegation. This keeps product, wishlist and bag actions
+// working even after cloud data re-renders the storefront.
+document.addEventListener('click', function(e){
+  const openBtn=e.target.closest?.('[data-open-product]');
+  if(openBtn){ e.preventDefault(); openProduct(openBtn.dataset.openProduct); return; }
+
+  const addBtn=e.target.closest?.('[data-add-product]');
+  if(addBtn){ e.preventDefault(); add(addBtn.dataset.addProduct); addActionAnimation('cart'); return; }
+
+  const wishBtn=e.target.closest?.('[data-wish-id]');
+  if(wishBtn){ e.preventDefault(); toggleWish(wishBtn.dataset.wishId); return; }
+
+  const addQty=e.target.closest?.('[data-add-quantity]');
+  if(addQty){ e.preventDefault(); addQuantity(addQty.dataset.addQuantity); return; }
+
+  const buy=e.target.closest?.('[data-buy-now]');
+  if(buy){ e.preventDefault(); buyNow(buy.dataset.buyNow); return; }
+
+  const slide=e.target.closest?.('[data-slide-gallery]');
+  if(slide){ e.preventDefault(); slideGallery(Number(slide.dataset.slideGallery), slide.dataset.slideProduct); return; }
+
+  const card=e.target.closest?.('[data-product-card]');
+  if(card && !e.target.closest('button,a,input,select,textarea')){
+    openProduct(card.dataset.productCard);
+  }
+});
+
 async function initCloud(){
   if(location.pathname==='/admin'){admin();}
   else {renderHome();}
@@ -706,5 +753,15 @@ async function initCloud(){
 }
 
 window.addEventListener('popstate',()=>{const pid=new URLSearchParams(location.search).get('product');if(pid&&products.some(p=>p.id===pid))openProduct(pid,false);else if(location.pathname==='/admin')admin();else goHome()});
+window.openProduct=openProduct;
+window.add=add;
+window.openCart=openCart;
+window.toggleWish=toggleWish;
+window.addQuantity=addQuantity;
+window.buyNow=buyNow;
+window.slideGallery=slideGallery;
+window.setGallery=setGallery;
+window.checkoutForm=checkoutForm;
+window.goHome=goHome;
 initCloud();
 </script></body></html>
